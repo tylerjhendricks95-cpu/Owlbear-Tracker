@@ -11,4 +11,4 @@ export interface InitiativeMetadata {
   activeIndex: number;
 }
 
-export const METADATA_KEY = "com.kalo143.initiative-tracker/metadata";
+export const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
