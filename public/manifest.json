@@ -1,11 +1,11 @@
 {
   "name": "Initiative Tracker",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "manifest_version": 1,
   "action": {
     "title": "Initiative Tracker",
     "icon": "/icon.svg",
-    "popover": "/index.html",
+    "popover": "/Owlbear-Tracker/index.html",
     "height": 600,
     "width": 400
   }
