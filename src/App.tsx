@@ -31,7 +31,7 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      // Register context menu option
+      // Register context menu option targeting CHARACTER and MOUNT layers
       OBR.contextMenu.create({
         id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
         icons: [
@@ -39,7 +39,10 @@ export default function App() {
             icon: "/icon.svg",
             label: "Add to Initiative",
             filter: {
-              every: [{ property: "type", value: "IMAGE" }],
+              some: [
+                { property: "layer", value: "CHARACTER" },
+                { property: "layer", value: "MOUNT" },
+              ],
             },
           },
         ],
