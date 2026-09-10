@@ -9,6 +9,7 @@ export interface TrackerEntry {
   score: number;
   hp: number;
   maxHp: number;
+  conditions: string[]; // Active status tags
 }
 
 export interface RoomData {
@@ -20,8 +21,18 @@ export interface RoomData {
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
 
-// Inline Data URL icon to ensure reliable rendering
-const CONTEXT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
+// Inline Data URL icon to prevent broken assets
+const CONTEXT_ICON =
+  "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
+
+// Common preset conditions with custom color coding
+const PRESET_CONDITIONS = [
+  { name: "Poisoned", color: "#2e7d32" },
+  { name: "Stunned", color: "#ed6c02" },
+  { name: "Blessed", color: "#0288d1" },
+  { name: "Prone", color: "#7b1fa2" },
+  { name: "Frightened", color: "#c62828" },
+];
 
 export default function App() {
   const [isReady, setIsReady] = useState(false);
@@ -34,12 +45,12 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      // 1. Remove existing context menu item to prevent duplicate ID crashes
+      // 1. Clean up existing context menu item
       try {
         await OBR.contextMenu.remove("com.tylerjhendricks95-cpu.initiative-tracker/add-token");
       } catch (_) {}
 
-      // 2. Register context menu option with explicit selection targeting
+      // 2. Register context menu option
       try {
         await OBR.contextMenu.create({
           id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
@@ -75,7 +86,6 @@ export default function App() {
           setRound(data.round || 1);
           setInCombat(data.inCombat || false);
 
-          // Highlight the current token using native OBR selection
           if (data.inCombat && data.entries.length > 0) {
             const activeId = data.entries[data.activeIndex]?.id;
             await highlightActiveTokenOnMap(activeId || null);
@@ -102,7 +112,7 @@ export default function App() {
     });
   }, []);
 
-  // Updates room state and syncs map selection
+  // Save state to metadata and trigger map visual sync
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -130,20 +140,66 @@ export default function App() {
     }
   };
 
-  // Option 2 Implementation: Uses OBR.player.select to trigger native token highlighting
+  // Highlights active token with a Gold Circle shape on map + Auto-pans camera
   const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
     try {
-      if (activeTokenId) {
-        await OBR.player.select([activeTokenId]);
-      } else {
-        await OBR.player.select([]);
+      const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
+
+      const allItems = await OBR.scene.items.getItems();
+
+      // Clear previous ring
+      const existingHighlight = allItems.find((item) => item.id === HIGHLIGHT_ID);
+      if (existingHighlight) {
+        await OBR.scene.items.deleteItems([HIGHLIGHT_ID]);
       }
+
+      if (!activeTokenId) return;
+
+      const activeToken = allItems.find((item) => item.id === activeTokenId);
+      if (!activeToken) return;
+
+      // Auto-pan viewport camera to active token
+      try {
+        const currentScale = await OBR.viewport.getScale();
+        await OBR.viewport.animateTo({
+          position: activeToken.position,
+          scale: currentScale,
+        });
+      } catch (err) {
+        console.error("Failed to pan viewport:", err);
+      }
+
+      // Calculate radius to surround token
+      const gridDpi = activeToken.grid?.dpi || 150;
+      const scale = activeToken.scale?.x || 1;
+      const ringRadius = (gridDpi * scale) / 2 + 8;
+
+      // Build attached gold ring shape
+      const highlightCircle = OBR.buildItem()
+        .id(HIGHLIGHT_ID)
+        .type("SHAPE")
+        .position(activeToken.position)
+        .layer("ATTACHMENT")
+        .attachedTo(activeToken.id)
+        .disableAttachmentBehavior(["ROTATION"])
+        .build({
+          shapeType: "CIRCLE",
+          radius: ringRadius,
+          style: {
+            fillColor: "#FFD700",
+            fillOpacity: 0.2,
+            strokeColor: "#FFD700",
+            strokeWidth: 6,
+            strokeOpacity: 1,
+          },
+        });
+
+      await OBR.scene.items.addItems([highlightCircle]);
     } catch (err) {
-      console.error("Failed to set active token selection:", err);
+      console.error("Failed to update active token map highlight:", err);
     }
   };
 
-  // Add tokens without rolling automatically yet
   const addTokensToTracker = async (items: Item[]) => {
     const currentMetadata = (await OBR.room.getMetadata())[METADATA_KEY] as RoomData | undefined;
     const existingEntries = currentMetadata?.entries || [];
@@ -152,16 +208,15 @@ export default function App() {
     for (const item of items) {
       if (newEntries.some((e) => e.id === item.id)) continue;
 
-      const tokenName = item.name || "Token";
-
       newEntries.push({
         id: item.id,
-        name: tokenName,
+        name: item.name || "Token",
         isAuto: true,
         modifier: 0,
-        score: 0, // Unrolled until combat starts
+        score: 0,
         hp: 10,
         maxHp: 10,
+        conditions: [],
       });
     }
 
@@ -182,7 +237,6 @@ export default function App() {
       const nextIsAuto = !entry.isAuto;
       let newScore = entry.score;
 
-      // If switching back to auto during active combat, auto-roll immediately
       if (nextIsAuto && inCombat) {
         const roll = Math.floor(Math.random() * 20) + 1;
         newScore = roll + entry.modifier;
@@ -228,7 +282,20 @@ export default function App() {
     await saveRoomState(newEntries, activeIndex, round, inCombat);
   };
 
-  // Triggers rolls for all Auto entries and sorts by highest score
+  const toggleCondition = async (entryId: string, conditionName: string) => {
+    const newEntries = entries.map((e) => {
+      if (e.id !== entryId) return e;
+      const current = e.conditions || [];
+      const exists = current.includes(conditionName);
+      const updated = exists
+        ? current.filter((c) => c !== conditionName)
+        : [...current, conditionName];
+      return { ...e, conditions: updated };
+    });
+
+    await saveRoomState(newEntries, activeIndex, round, inCombat);
+  };
+
   const startCombat = async () => {
     if (entries.length === 0) return;
 
@@ -393,7 +460,7 @@ export default function App() {
               <div
                 style={{
                   display: "flex",
-                  justify: "space-between",
+                  justifyContent: "space-between",
                   alignItems: "center",
                   marginBottom: "6px",
                 }}
@@ -584,6 +651,68 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* Active Conditions Display */}
+              <div style={{ marginTop: "6px", display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                {(entry.conditions || []).map((cond) => {
+                  const preset = PRESET_CONDITIONS.find((p) => p.name === cond);
+                  const bg = preset ? preset.color : "#444a5a";
+
+                  return (
+                    <span
+                      key={cond}
+                      onClick={() => toggleCondition(entry.id, cond)}
+                      style={{
+                        backgroundColor: bg,
+                        color: "#fff",
+                        fontSize: "10px",
+                        fontWeight: "bold",
+                        padding: "2px 6px",
+                        borderRadius: "10px",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "3px",
+                      }}
+                    >
+                      {cond} ✕
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* Condition Quick Selector */}
+              <div
+                style={{
+                  marginTop: "6px",
+                  display: "flex",
+                  gap: "4px",
+                  overflowX: "auto",
+                  paddingBottom: "2px",
+                }}
+              >
+                {PRESET_CONDITIONS.map((p) => {
+                  const isActive = (entry.conditions || []).includes(p.name);
+                  return (
+                    <button
+                      key={p.name}
+                      onClick={() => toggleCondition(entry.id, p.name)}
+                      style={{
+                        padding: "2px 6px",
+                        fontSize: "10px",
+                        borderRadius: "4px",
+                        border: isActive ? `1px solid ${p.color}` : "1px solid #444",
+                        backgroundColor: isActive ? p.color : "#1e1e24",
+                        color: isActive ? "#fff" : "#888",
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {isActive ? `✓ ${p.name}` : `+ ${p.name}`}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );
