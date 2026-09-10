@@ -20,7 +20,6 @@ export interface RoomData {
 }
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
-const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
 
 // Inline Data URL icon to prevent broken assets
 const CONTEXT_ICON =
@@ -45,6 +44,9 @@ export default function App() {
   useEffect(() => {
     OBR.onReady(async () => {
       setIsReady(true);
+
+      // Clean up any legacy highlight shapes left on the map
+      await removeLegacyHighlight();
 
       // 1. Clean up existing context menu item
       try {
@@ -89,9 +91,9 @@ export default function App() {
 
           if (data.inCombat && data.entries.length > 0) {
             const activeId = data.entries[data.activeIndex]?.id;
-            await highlightActiveTokenOnMap(activeId || null);
+            await selectActiveTokenOnMap(activeId || null);
           } else {
-            await highlightActiveTokenOnMap(null);
+            await selectActiveTokenOnMap(null);
           }
         }
       });
@@ -107,56 +109,24 @@ export default function App() {
 
         if (data.inCombat && data.entries.length > 0) {
           const activeId = data.entries[data.activeIndex]?.id;
-          await highlightActiveTokenOnMap(activeId || null);
+          await selectActiveTokenOnMap(activeId || null);
         }
       }
     });
   }, []);
 
-  // Attaches a visual ring to the active token without moving/panning the camera
-  const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
+  // Remove shape objects created by previous highlight implementations
+  const removeLegacyHighlight = async () => {
     try {
-      // Always remove previous highlight ring first
+      const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
       const allItems = await OBR.scene.items.getItems();
       if (allItems.some((item) => item.id === HIGHLIGHT_ID)) {
         await OBR.scene.items.deleteItems([HIGHLIGHT_ID]);
       }
-
-      if (!activeTokenId) return;
-
-      const targetToken = allItems.find((item) => item.id === activeTokenId);
-      if (!targetToken) return;
-
-      // Calculate center position and sizing for the attachment ring
-      const gridDpi = targetToken.grid?.dpi || 150;
-      const width = gridDpi * (targetToken.scale?.x || 1);
-      const height = gridDpi * (targetToken.scale?.y || 1);
-
-      const ring = OBR.buildShape()
-        .id(HIGHLIGHT_ID)
-        .shapeType("CIRCLE")
-        .position({
-          x: targetToken.position.x + width / 2,
-          y: targetToken.position.y + height / 2,
-        })
-        .radius(Math.max(30, width / 2 + 10))
-        .fillColor("#FFD700")
-        .fillOpacity(0.25)
-        .strokeColor("#FFD700")
-        .strokeWidth(5)
-        .strokeOpacity(1)
-        .layer("ATTACHMENT")
-        .attachedTo(targetToken.id)
-        .locked(true)
-        .build();
-
-      await OBR.scene.items.addItems([ring]);
-    } catch (err) {
-      console.error("Failed to update active token highlight:", err);
-    }
+    } catch (_) {}
   };
 
-  // Save state to metadata and update map highlight
+  // Save state to metadata and trigger token selection
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -178,9 +148,24 @@ export default function App() {
     });
 
     if (newInCombat && newEntries.length > 0) {
-      await highlightActiveTokenOnMap(newEntries[newActiveIdx]?.id || null);
+      await selectActiveTokenOnMap(newEntries[newActiveIdx]?.id);
     } else {
-      await highlightActiveTokenOnMap(null);
+      await selectActiveTokenOnMap(null);
+    }
+  };
+
+  // Selects the active token without panning or centering the map screen
+  const selectActiveTokenOnMap = async (activeTokenId: string | null) => {
+    try {
+      if (!activeTokenId) {
+        await OBR.player.select([]);
+        return;
+      }
+
+      // Select active token on map
+      await OBR.player.select([activeTokenId]);
+    } catch (err) {
+      console.error("Failed to select active token on map:", err);
     }
   };
 
