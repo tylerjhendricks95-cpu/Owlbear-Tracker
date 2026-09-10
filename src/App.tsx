@@ -140,14 +140,14 @@ export default function App() {
     }
   };
 
-  // Highlights active token with a Gold Circle shape on map + Auto-pans camera
+  // Highlights active token with a Gold Circle shape on map + Safe Camera Centering
   const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
     try {
       const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
 
       const allItems = await OBR.scene.items.getItems();
 
-      // Clear previous ring
+      // 1. Clear previous ring
       const existingHighlight = allItems.find((item) => item.id === HIGHLIGHT_ID);
       if (existingHighlight) {
         await OBR.scene.items.deleteItems([HIGHLIGHT_ID]);
@@ -158,23 +158,34 @@ export default function App() {
       const activeToken = allItems.find((item) => item.id === activeTokenId);
       if (!activeToken) return;
 
-      // Auto-pan viewport camera to active token
+      // 2. Safe Viewport Pan: Ensure coordinates are absolute valid numbers
       try {
         const currentScale = await OBR.viewport.getScale();
-        await OBR.viewport.animateTo({
-          position: activeToken.position,
-          scale: currentScale,
-        });
+
+        if (
+          typeof activeToken.position.x === "number" &&
+          typeof activeToken.position.y === "number" &&
+          !isNaN(activeToken.position.x) &&
+          !isNaN(activeToken.position.y)
+        ) {
+          await OBR.viewport.animateTo({
+            position: {
+              x: activeToken.position.x,
+              y: activeToken.position.y,
+            },
+            scale: currentScale,
+          });
+        }
       } catch (err) {
-        console.error("Failed to pan viewport:", err);
+        console.warn("Could not pan camera to active token:", err);
       }
 
-      // Calculate radius to surround token
+      // 3. Calculate radius to surround token cleanly
       const gridDpi = activeToken.grid?.dpi || 150;
       const scale = activeToken.scale?.x || 1;
       const ringRadius = (gridDpi * scale) / 2 + 8;
 
-      // Build attached gold ring shape
+      // 4. Build attached gold ring shape
       const highlightCircle = OBR.buildItem()
         .id(HIGHLIGHT_ID)
         .type("SHAPE")
