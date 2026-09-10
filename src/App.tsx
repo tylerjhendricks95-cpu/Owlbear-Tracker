@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import OBR, { Item, Text } from "@owlbear-rodeo/sdk";
+import OBR, { Item } from "@owlbear-rodeo/sdk";
 
 export interface TrackerEntry {
   id: string; // Token ID
@@ -17,7 +17,6 @@ export interface RoomData {
 }
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
-const TURN_LABEL_ID = "com.tylerjhendricks95-cpu.initiative-tracker/turn-label";
 
 export default function App() {
   const [isReady, setIsReady] = useState(false);
@@ -29,6 +28,23 @@ export default function App() {
   useEffect(() => {
     OBR.onReady(async () => {
       setIsReady(true);
+
+      // Register right-click / selection menu option on image tokens
+      OBR.contextMenu.create({
+        id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
+        icons: [
+          {
+            icon: "/icon.svg",
+            label: "Add to Initiative",
+            filter: {
+              every: [{ property: "type", value: "IMAGE" }],
+            },
+          },
+        ],
+        async onClick(context) {
+          await addTokensToTracker(context.items);
+        },
+      });
 
       // Listen for room metadata changes across players
       OBR.room.onMetadataChange((metadata) => {
@@ -74,37 +90,31 @@ export default function App() {
     });
 
     if (newInCombat && newEntries.length > 0) {
-      await updateMapTurnLabel(newEntries[newActiveIdx]?.id);
+      await highlightActiveTokenOnMap(newEntries[newActiveIdx]?.id);
     } else {
-      await removeMapTurnLabel();
+      await highlightActiveTokenOnMap(null);
     }
   };
 
-  // Add currently selected token from the board
-  const addSelectedToken = async () => {
-    const selection = await OBR.player.getSelection();
-    if (!selection || selection.length === 0) {
-      alert("Please select a token on the map board first!");
-      return;
-    }
-
-    const items = await OBR.scene.items.getItems(selection);
-    const newEntries = [...entries];
+  // Process adding tokens directly without pop-up prompts
+  const addTokensToTracker = async (items: Item[]) => {
+    const currentMetadata = (await OBR.room.getMetadata())[METADATA_KEY] as RoomData | undefined;
+    const existingEntries = currentMetadata?.entries || [];
+    const newEntries = [...existingEntries];
 
     for (const item of items) {
       if (newEntries.some((e) => e.id === item.id)) continue;
 
       const tokenName = item.name || "Token";
-      const modInput = prompt(`Enter initiative modifier for "${tokenName}":`, "0");
-      const modifier = parseInt(modInput || "0", 10) || 0;
+      const defaultMod = 0;
       const roll = Math.floor(Math.random() * 20) + 1;
 
       newEntries.push({
         id: item.id,
         name: tokenName,
         isAuto: true,
-        modifier: modifier,
-        score: roll + modifier,
+        modifier: defaultMod,
+        score: roll + defaultMod,
       });
     }
 
@@ -129,7 +139,7 @@ export default function App() {
     await saveRoomState(newEntries, activeIndex, round, inCombat);
   };
 
-  // Update Manual Score / Modifier
+  // Update Manual Score or Modifier
   const updateEntryValue = async (id: string, field: "score" | "modifier", val: number) => {
     const newEntries = entries.map((e) => {
       if (e.id !== id) return e;
@@ -158,7 +168,7 @@ export default function App() {
 
     if (nextIdx >= entries.length) {
       nextIdx = 0;
-      nextRound += 1; // Increment round counter after all go
+      nextRound += 1; // Increment round counter
     }
 
     await saveRoomState(entries, nextIdx, nextRound, true);
@@ -177,53 +187,20 @@ export default function App() {
     await saveRoomState(newEntries, nextIdx, round, inCombat && newEntries.length > 0);
   };
 
-  // Draw floating text above the active token
-  const updateMapTurnLabel = async (activeTokenId: string | null) => {
-    if (!activeTokenId) {
-      await removeMapTurnLabel();
-      return;
-    }
-
-    const items = await OBR.scene.items.getItems([activeTokenId]);
-    const activeToken = items[0];
-    if (!activeToken) return;
-
-    // Remove any existing label first
-    await removeMapTurnLabel();
-
-    // Create a new floating text label above the token position
-    const label: Text = {
-      id: TURN_LABEL_ID,
-      type: "TEXT",
-      name: "Turn Indicator",
-      layer: "TEXT",
-      position: {
-        x: activeToken.position.x,
-        y: activeToken.position.y - 60, // Position above token
-      },
-      rotation: 0,
-      scale: { x: 1, y: 1 },
-      visible: true,
-      locked: true,
-      attachedTo: activeToken.id,
-      text: {
-        plainText: "⚔️ Active Turn",
-        style: {
-          fillColor: "#FFD700",
-          fontSize: 24,
-          fontFamily: "sans-serif",
-          fontWeight: "bold",
-          textAlign: "CENTER",
-          lineHeight: 1,
-        },
-      },
-    } as unknown as Text;
-
-    await OBR.scene.items.addItems([label]);
-  };
-
-  const removeMapTurnLabel = async () => {
-    await OBR.scene.items.deleteItems([TURN_LABEL_ID]);
+  // Apply a glowing gold ring outline around the active token on the map board
+  const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
+    const allItems = await OBR.scene.items.getItems();
+    await OBR.scene.items.updateItems(allItems, (draft) => {
+      for (const item of draft) {
+        if (item.type === "IMAGE") {
+          if (activeTokenId && item.id === activeTokenId) {
+            item.outline = { color: "#FFD700", width: 8 };
+          } else if (item.outline?.color === "#FFD700") {
+            delete item.outline;
+          }
+        }
+      }
+    });
   };
 
   if (!isReady) {
@@ -247,10 +224,6 @@ export default function App() {
         )}
       </div>
 
-      <button style={{ width: "100%", padding: "8px", backgroundColor: "#3a3d4a", color: "#fff", border: "1px dashed #666", borderRadius: "6px", marginBottom: "12px", fontWeight: "bold", cursor: "pointer" }} onClick={addSelectedToken}>
-        + Add Selected Token
-      </button>
-
       {/* Initiative Entries */}
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         {entries.map((entry, idx) => {
@@ -273,7 +246,6 @@ export default function App() {
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" }}>
-                {/* Auto / Manual Toggle Button */}
                 <button
                   style={{
                     padding: "4px 8px",
@@ -289,7 +261,6 @@ export default function App() {
                   {entry.isAuto ? "Auto" : "Manual"}
                 </button>
 
-                {/* Conditional Inputs */}
                 {entry.isAuto ? (
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                     <span>Mod:</span>
