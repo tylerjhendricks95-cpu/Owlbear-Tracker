@@ -45,7 +45,7 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      // Remove any legacy highlight shapes left on the map from prior builds
+      // Clean up any legacy highlight shapes left on the map
       await removeLegacyHighlight();
 
       // 1. Clean up existing context menu item
@@ -91,9 +91,9 @@ export default function App() {
 
           if (data.inCombat && data.entries.length > 0) {
             const activeId = data.entries[data.activeIndex]?.id;
-            await highlightActiveTokenOnMap(activeId || null);
+            await selectActiveTokenOnMap(activeId || null);
           } else {
-            await highlightActiveTokenOnMap(null);
+            await selectActiveTokenOnMap(null);
           }
         }
       });
@@ -109,7 +109,7 @@ export default function App() {
 
         if (data.inCombat && data.entries.length > 0) {
           const activeId = data.entries[data.activeIndex]?.id;
-          await highlightActiveTokenOnMap(activeId || null);
+          await selectActiveTokenOnMap(activeId || null);
         }
       }
     });
@@ -126,7 +126,7 @@ export default function App() {
     } catch (_) {}
   };
 
-  // Save state to metadata and trigger selection sync
+  // Save state to metadata and trigger token selection
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -148,54 +148,22 @@ export default function App() {
     });
 
     if (newInCombat && newEntries.length > 0) {
-      await highlightActiveTokenOnMap(newEntries[newActiveIdx]?.id);
+      await selectActiveTokenOnMap(newEntries[newActiveIdx]?.id);
     } else {
-      await highlightActiveTokenOnMap(null);
+      await selectActiveTokenOnMap(null);
     }
   };
 
-  // Uses native OBR.player.select to outline the active token and center viewport
-  const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
+  // Selects the active token without panning or centering the map screen
+  const selectActiveTokenOnMap = async (activeTokenId: string | null) => {
     try {
       if (!activeTokenId) {
         await OBR.player.select([]);
         return;
       }
 
-      const allItems = await OBR.scene.items.getItems();
-      const activeToken = allItems.find((item) => item.id === activeTokenId);
-      if (!activeToken) return;
-
       // Select active token on map
-      await OBR.player.select([activeToken.id]);
-
-      // Safe Viewport Centering
-      try {
-        const bounds = await OBR.scene.items.getItemBounds([activeToken.id]);
-        const tokenCenter = bounds?.[0]?.center ?? activeToken.position;
-
-        if (
-          tokenCenter &&
-          typeof tokenCenter.x === "number" &&
-          typeof tokenCenter.y === "number" &&
-          !isNaN(tokenCenter.x) &&
-          !isNaN(tokenCenter.y)
-        ) {
-          const currentScale = await OBR.viewport.getScale();
-          const viewportWidth = await OBR.viewport.getWidth();
-          const viewportHeight = await OBR.viewport.getHeight();
-
-          const targetX = tokenCenter.x - viewportWidth / (2 * currentScale);
-          const targetY = tokenCenter.y - viewportHeight / (2 * currentScale);
-
-          await OBR.viewport.animateTo({
-            position: { x: targetX, y: targetY },
-            scale: currentScale,
-          });
-        }
-      } catch (err) {
-        console.warn("Could not pan camera to active token:", err);
-      }
+      await OBR.player.select([activeTokenId]);
     } catch (err) {
       console.error("Failed to select active token on map:", err);
     }
