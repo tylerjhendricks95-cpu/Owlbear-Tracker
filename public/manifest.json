@@ -7,7 +7,7 @@
   "description": "Custom Initiative Tracker for Owlbear Rodeo",
   "action": {
     "title": "Initiative Tracker",
-    "icon": "icon.svg",
+    "icon": "./icon.svg",
     "popover": "index.html",
     "width": 400,
     "height": 600
