@@ -45,6 +45,9 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
+      // Remove any legacy highlight shapes left on the map from prior builds
+      await removeLegacyHighlight();
+
       // 1. Clean up existing context menu item
       try {
         await OBR.contextMenu.remove("com.tylerjhendricks95-cpu.initiative-tracker/add-token");
@@ -112,7 +115,18 @@ export default function App() {
     });
   }, []);
 
-  // Save state to metadata and trigger map visual sync
+  // Remove shape objects created by previous highlight implementations
+  const removeLegacyHighlight = async () => {
+    try {
+      const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
+      const allItems = await OBR.scene.items.getItems();
+      if (allItems.some((item) => item.id === HIGHLIGHT_ID)) {
+        await OBR.scene.items.deleteItems([HIGHLIGHT_ID]);
+      }
+    } catch (_) {}
+  };
+
+  // Save state to metadata and trigger selection sync
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -140,25 +154,22 @@ export default function App() {
     }
   };
 
-  // Highlights active token with a Gold Circle shape on map
+  // Uses native OBR.player.select to outline the active token and center viewport
   const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
     try {
-      const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
-
-      const allItems = await OBR.scene.items.getItems();
-
-      // 1. Clear previous ring
-      const existingHighlight = allItems.find((item) => item.id === HIGHLIGHT_ID);
-      if (existingHighlight) {
-        await OBR.scene.items.deleteItems([HIGHLIGHT_ID]);
+      if (!activeTokenId) {
+        await OBR.player.select([]);
+        return;
       }
 
-      if (!activeTokenId) return;
-
+      const allItems = await OBR.scene.items.getItems();
       const activeToken = allItems.find((item) => item.id === activeTokenId);
       if (!activeToken) return;
 
-      // 2. Safe Viewport Centering
+      // Select active token on map
+      await OBR.player.select([activeToken.id]);
+
+      // Safe Viewport Centering
       try {
         const bounds = await OBR.scene.items.getItemBounds([activeToken.id]);
         const tokenCenter = bounds?.[0]?.center ?? activeToken.position;
@@ -185,31 +196,8 @@ export default function App() {
       } catch (err) {
         console.warn("Could not pan camera to active token:", err);
       }
-
-      // 3. Compute Radius Safely
-      const gridDpi = activeToken.grid?.dpi || 150;
-      const scaleX = activeToken.scale?.x || 1;
-      const calculatedRadius = Math.max(30, (gridDpi * scaleX) / 2 + 10);
-
-      // 4. Build Attached Shape using proper OBR.buildShape() chain
-      const highlightCircle = OBR.buildShape()
-        .id(HIGHLIGHT_ID)
-        .shapeType("CIRCLE")
-        .position(activeToken.position)
-        .radius(calculatedRadius)
-        .fillColor("#FFD700")
-        .fillOpacity(0.25)
-        .strokeColor("#FFD700")
-        .strokeWidth(6)
-        .strokeOpacity(1)
-        .layer("ATTACHMENT")
-        .attachedTo(activeToken.id)
-        .locked(true)
-        .build();
-
-      await OBR.scene.items.addItems([highlightCircle]);
     } catch (err) {
-      console.error("Failed to update active token map highlight:", err);
+      console.error("Failed to select active token on map:", err);
     }
   };
 
