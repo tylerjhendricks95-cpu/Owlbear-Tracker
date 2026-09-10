@@ -20,7 +20,7 @@ export interface RoomData {
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
 
-// Inline Data URL icon to ensure it loads even if /icon.svg is missing
+// Inline Data URL icon to ensure it loads reliably
 const CONTEXT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
 
 export default function App() {
@@ -34,7 +34,12 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      // Register context menu option (Right-Click / Selection Action)
+      // Remove existing menu item before re-registering
+      try {
+        await OBR.contextMenu.remove("com.tylerjhendricks95-cpu.initiative-tracker/add-token");
+      } catch (_) {}
+
+      // Register context menu option targeting selected map items
       try {
         await OBR.contextMenu.create({
           id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
@@ -42,6 +47,15 @@ export default function App() {
             {
               icon: CONTEXT_ICON,
               label: "Add to Initiative",
+            },
+          ],
+          select: [
+            {
+              items: [
+                { property: "layer", value: "CHARACTER" },
+                { property: "layer", value: "MOUNT" },
+                { property: "type", value: "IMAGE" },
+              ],
             },
           ],
           async onClick(context) {
@@ -127,7 +141,6 @@ export default function App() {
     await saveRoomState(newEntries, activeIndex, round, inCombat);
   };
 
-  // Button Action: Get selection directly from OBR Player API
   const handleAddSelected = async () => {
     const selectedIds = await OBR.player.getSelection();
     if (!selectedIds || selectedIds.length === 0) return;
