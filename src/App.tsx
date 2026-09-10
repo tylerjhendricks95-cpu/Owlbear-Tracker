@@ -7,6 +7,8 @@ export interface TrackerEntry {
   isAuto: boolean;
   modifier: number;
   score: number;
+  hp: number;
+  maxHp: number;
 }
 
 export interface RoomData {
@@ -29,7 +31,7 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      // Register right-click / selection menu option on image tokens
+      // Register context menu option
       OBR.contextMenu.create({
         id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
         icons: [
@@ -46,7 +48,7 @@ export default function App() {
         },
       });
 
-      // Listen for room metadata changes across players
+      // Listen for room metadata updates
       OBR.room.onMetadataChange((metadata) => {
         const data = metadata[METADATA_KEY] as RoomData | undefined;
         if (data) {
@@ -96,7 +98,6 @@ export default function App() {
     }
   };
 
-  // Process adding tokens directly without pop-up prompts
   const addTokensToTracker = async (items: Item[]) => {
     const currentMetadata = (await OBR.room.getMetadata())[METADATA_KEY] as RoomData | undefined;
     const existingEntries = currentMetadata?.entries || [];
@@ -106,22 +107,22 @@ export default function App() {
       if (newEntries.some((e) => e.id === item.id)) continue;
 
       const tokenName = item.name || "Token";
-      const defaultMod = 0;
       const roll = Math.floor(Math.random() * 20) + 1;
 
       newEntries.push({
         id: item.id,
         name: tokenName,
         isAuto: true,
-        modifier: defaultMod,
-        score: roll + defaultMod,
+        modifier: 0,
+        score: roll,
+        hp: 10,
+        maxHp: 10,
       });
     }
 
     await saveRoomState(newEntries, activeIndex, round, inCombat);
   };
 
-  // Toggle Auto vs Manual
   const toggleAuto = async (id: string) => {
     const newEntries = entries.map((entry) => {
       if (entry.id !== id) return entry;
@@ -139,8 +140,11 @@ export default function App() {
     await saveRoomState(newEntries, activeIndex, round, inCombat);
   };
 
-  // Update Manual Score or Modifier
-  const updateEntryValue = async (id: string, field: "score" | "modifier", val: number) => {
+  const updateEntryValue = async (
+    id: string,
+    field: "score" | "modifier" | "hp" | "maxHp",
+    val: number
+  ) => {
     const newEntries = entries.map((e) => {
       if (e.id !== id) return e;
       if (field === "score") return { ...e, score: val };
@@ -148,13 +152,24 @@ export default function App() {
         const roll = Math.floor(Math.random() * 20) + 1;
         return { ...e, modifier: val, score: e.isAuto ? roll + val : e.score };
       }
+      if (field === "hp") return { ...e, hp: Math.max(0, val) };
+      if (field === "maxHp") return { ...e, maxHp: Math.max(1, val) };
       return e;
     });
 
     await saveRoomState(newEntries, activeIndex, round, inCombat);
   };
 
-  // Start Combat: Sort highest to lowest & highlight top player
+  const adjustHp = async (id: string, delta: number) => {
+    const newEntries = entries.map((e) => {
+      if (e.id !== id) return e;
+      const newHp = Math.min(e.maxHp, Math.max(0, e.hp + delta));
+      return { ...e, hp: newHp };
+    });
+
+    await saveRoomState(newEntries, activeIndex, round, inCombat);
+  };
+
   const startCombat = async () => {
     if (entries.length === 0) return;
     const sorted = [...entries].sort((a, b) => b.score - a.score);
@@ -168,7 +183,7 @@ export default function App() {
 
     if (nextIdx >= entries.length) {
       nextIdx = 0;
-      nextRound += 1; // Increment round counter
+      nextRound += 1;
     }
 
     await saveRoomState(entries, nextIdx, nextRound, true);
@@ -187,7 +202,6 @@ export default function App() {
     await saveRoomState(newEntries, nextIdx, round, inCombat && newEntries.length > 0);
   };
 
-  // Apply a glowing gold ring outline around the active token on the map board
   const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
     const allItems = await OBR.scene.items.getItems();
     await OBR.scene.items.updateItems(allItems, (draft) => {
@@ -228,6 +242,8 @@ export default function App() {
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
         {entries.map((entry, idx) => {
           const isActive = inCombat && idx === activeIndex;
+          const isUnconscious = entry.hp === 0;
+
           return (
             <div
               key={entry.id}
@@ -236,24 +252,28 @@ export default function App() {
                 backgroundColor: isActive ? "#3e3b25" : "#2a2d37",
                 borderRadius: "6px",
                 borderLeft: isActive ? "5px solid #ffd700" : "5px solid transparent",
+                opacity: isUnconscious ? 0.7 : 1,
               }}
             >
+              {/* Header: Name + Unconscious Status + Remove */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
                 <span style={{ fontWeight: "bold", fontSize: "15px" }}>
-                  {isActive && "⚔️ "}{entry.name}
+                  {isActive && "⚔️ "}{entry.name} {isUnconscious && <span style={{ color: "#f44336", fontSize: "12px", marginLeft: "4px" }}>💀 Unconscious</span>}
                 </span>
                 <button style={{ background: "none", border: "none", color: "#888", cursor: "pointer" }} onClick={() => removeEntry(entry.id)}>✕</button>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" }}>
+              {/* Initiative Controls */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", marginBottom: "8px" }}>
                 <button
                   style={{
-                    padding: "4px 8px",
+                    padding: "2px 6px",
                     backgroundColor: entry.isAuto ? "#2e7d32" : "#ed6c02",
                     color: "#fff",
                     border: "none",
-                    borderRadius: "4px",
+                    borderRadius: "3px",
                     fontWeight: "bold",
+                    fontSize: "11px",
                     cursor: "pointer",
                   }}
                   onClick={() => toggleAuto(entry.id)}
@@ -268,7 +288,7 @@ export default function App() {
                       type="number"
                       value={entry.modifier}
                       onChange={(e) => updateEntryValue(entry.id, "modifier", parseInt(e.target.value, 10) || 0)}
-                      style={{ width: "45px", backgroundColor: "#1e1e24", color: "#fff", border: "1px solid #444", borderRadius: "3px", padding: "2px 4px" }}
+                      style={{ width: "40px", backgroundColor: "#1e1e24", color: "#fff", border: "1px solid #444", borderRadius: "3px", padding: "2px" }}
                     />
                   </div>
                 ) : (
@@ -278,13 +298,43 @@ export default function App() {
                       type="number"
                       value={entry.score}
                       onChange={(e) => updateEntryValue(entry.id, "score", parseInt(e.target.value, 10) || 0)}
-                      style={{ width: "55px", backgroundColor: "#1e1e24", color: "#fff", border: "1px solid #444", borderRadius: "3px", padding: "2px 4px" }}
+                      style={{ width: "45px", backgroundColor: "#1e1e24", color: "#fff", border: "1px solid #444", borderRadius: "3px", padding: "2px" }}
                     />
                   </div>
                 )}
 
-                <div style={{ marginLeft: "auto", fontSize: "16px", fontWeight: "bold", color: "#ffd700" }}>
-                  Total: {entry.score}
+                <div style={{ marginLeft: "auto", fontSize: "14px", fontWeight: "bold", color: "#ffd700" }}>
+                  Init: {entry.score}
+                </div>
+              </div>
+
+              {/* HP Tracking Section */}
+              <div style={{ backgroundColor: "#1e1e24", padding: "6px", borderRadius: "4px", fontSize: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <span style={{ fontWeight: "bold", color: "#aaa" }}>HP:</span>
+                    <input
+                      type="number"
+                      value={entry.hp}
+                      onChange={(e) => updateEntryValue(entry.id, "hp", parseInt(e.target.value, 10) || 0)}
+                      style={{ width: "40px", backgroundColor: "#2a2d37", color: "#fff", border: "1px solid #444", borderRadius: "3px", padding: "2px 4px" }}
+                    />
+                    <span>/</span>
+                    <input
+                      type="number"
+                      value={entry.maxHp}
+                      onChange={(e) => updateEntryValue(entry.id, "maxHp", parseInt(e.target.value, 10) || 0)}
+                      style={{ width: "40px", backgroundColor: "#2a2d37", color: "#888", border: "1px solid #444", borderRadius: "3px", padding: "2px 4px" }}
+                    />
+                  </div>
+
+                  {/* Quick Adjust Buttons */}
+                  <div style={{ display: "flex", gap: "3px" }}>
+                    <button style={{ padding: "2px 5px", backgroundColor: "#c62828", color: "#fff", border: "none", borderRadius: "3px", cursor: "pointer", fontSize: "10px" }} onClick={() => adjustHp(entry.id, -5)}>-5</button>
+                    <button style={{ padding: "2px 5px", backgroundColor: "#d32f2f", color: "#fff", border: "none", borderRadius: "3px", cursor: "pointer", fontSize: "10px" }} onClick={() => adjustHp(entry.id, -1)}>-1</button>
+                    <button style={{ padding: "2px 5px", backgroundColor: "#388e3c", color: "#fff", border: "none", borderRadius: "3px", cursor: "pointer", fontSize: "10px" }} onClick={() => adjustHp(entry.id, 1)}>+1</button>
+                    <button style={{ padding: "2px 5px", backgroundColor: "#2e7d32", color: "#fff", border: "none", borderRadius: "3px", cursor: "pointer", fontSize: "10px" }} onClick={() => adjustHp(entry.id, 5)}>+5</button>
+                  </div>
                 </div>
               </div>
             </div>
