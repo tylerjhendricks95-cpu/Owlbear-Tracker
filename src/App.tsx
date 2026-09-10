@@ -11,21 +11,24 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-OBR.contextMenu.create({
-  id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
-  icons: [
-    {
-      icon: "/icon.svg",
-      label: "Add to Initiative",
-      filter: {
-        every: [{ property: "type", value: "IMAGE" }],
-      },
-    },
-  ],
-  async onClick(context) {
-    await addTokensToTracker(context.items);
-  },
-});
+      // Register context menu item on image tokens
+      OBR.contextMenu.create({
+        id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
+        icons: [
+          {
+            icon: "/icon.svg",
+            label: "Add to Initiative",
+            filter: {
+              every: [{ property: "type", value: "IMAGE" }],
+            },
+          },
+        ],
+        async onClick(context) {
+          await addTokensToTracker(context.items);
+        },
+      });
+
+      // Listen for live updates from other players/GM
       OBR.room.onMetadataChange((metadata) => {
         const data = metadata[METADATA_KEY] as InitiativeMetadata | undefined;
         if (data) {
@@ -34,6 +37,7 @@ OBR.contextMenu.create({
         }
       });
 
+      // Load initial room metadata state
       const initialMetadata = await OBR.room.getMetadata();
       const data = initialMetadata[METADATA_KEY] as InitiativeMetadata | undefined;
       if (data) {
@@ -130,7 +134,7 @@ OBR.contextMenu.create({
   }
 
   return (
-    <div style={{ padding: "12px", fontFamily: "sans-serif", color: "#fff", backgroundColor: "#1e1e24", height: "100vh" }}>
+    <div style={{ padding: "12px", fontFamily: "sans-serif", color: "#fff", backgroundColor: "#1e1e24", height: "100vh", boxSizing: "border-box" }}>
       <h2 style={{ margin: "0 0 12px 0", fontSize: "18px", textAlign: "center" }}>Initiative Tracker</h2>
       <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
         <button style={{ flex: 1, padding: "6px", backgroundColor: "#3a3d4a", color: "#fff", border: "none", borderRadius: "4px" }} onClick={prevTurn} disabled={entries.length === 0}>◀ Prev</button>
