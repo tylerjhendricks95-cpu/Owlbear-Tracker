@@ -20,6 +20,9 @@ export interface RoomData {
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
 
+// Inline Data URL icon to ensure it loads even if /icon.svg is missing
+const CONTEXT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
+
 export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [entries, setEntries] = useState<TrackerEntry[]>([]);
@@ -31,25 +34,23 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      // Register context menu option targeting CHARACTER and MOUNT layers
-      OBR.contextMenu.create({
-        id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
-        icons: [
-          {
-            icon: "/icon.svg",
-            label: "Add to Initiative",
-            filter: {
-              some: [
-                { property: "layer", value: "CHARACTER" },
-                { property: "layer", value: "MOUNT" },
-              ],
+      // Register context menu option without restrictive filters
+      try {
+        await OBR.contextMenu.create({
+          id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
+          icons: [
+            {
+              icon: CONTEXT_ICON,
+              label: "Add to Initiative",
             },
+          ],
+          async onClick(context) {
+            await addTokensToTracker(context.items);
           },
-        ],
-        async onClick(context) {
-          await addTokensToTracker(context.items);
-        },
-      });
+        });
+      } catch (err) {
+        console.error("Failed to register context menu:", err);
+      }
 
       // Listen for room metadata updates
       OBR.room.onMetadataChange((metadata) => {
