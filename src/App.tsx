@@ -140,7 +140,7 @@ export default function App() {
     }
   };
 
-  // Highlights active token with a Gold Circle shape on map + True Center Camera Panning
+  // Highlights active token with a Gold Circle shape on map
   const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
     try {
       const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
@@ -158,26 +158,27 @@ export default function App() {
       const activeToken = allItems.find((item) => item.id === activeTokenId);
       if (!activeToken) return;
 
-      // 2. Calculate true world center of the token
-      const bounds = await OBR.scene.items.getItemBounds([activeToken.id]);
-      const centerPoint = bounds ? bounds[0]?.center : activeToken.position;
-
-      // 3. Pan Camera SAFELY to the calculated world center
+      // 2. Safe Viewport Centering
       try {
+        const bounds = await OBR.scene.items.getItemBounds([activeToken.id]);
+        const tokenCenter = bounds?.[0]?.center ?? activeToken.position;
+
         if (
-          centerPoint &&
-          typeof centerPoint.x === "number" &&
-          typeof centerPoint.y === "number" &&
-          !isNaN(centerPoint.x) &&
-          !isNaN(centerPoint.y)
+          tokenCenter &&
+          typeof tokenCenter.x === "number" &&
+          typeof tokenCenter.y === "number" &&
+          !isNaN(tokenCenter.x) &&
+          !isNaN(tokenCenter.y)
         ) {
           const currentScale = await OBR.viewport.getScale();
+          const viewportWidth = await OBR.viewport.getWidth();
+          const viewportHeight = await OBR.viewport.getHeight();
+
+          const targetX = tokenCenter.x - viewportWidth / (2 * currentScale);
+          const targetY = tokenCenter.y - viewportHeight / (2 * currentScale);
 
           await OBR.viewport.animateTo({
-            position: {
-              x: centerPoint.x,
-              y: centerPoint.y,
-            },
+            position: { x: targetX, y: targetY },
             scale: currentScale,
           });
         }
@@ -185,30 +186,26 @@ export default function App() {
         console.warn("Could not pan camera to active token:", err);
       }
 
-      // 4. Calculate radius to surround token cleanly
+      // 3. Compute Radius Safely
       const gridDpi = activeToken.grid?.dpi || 150;
-      const scale = activeToken.scale?.x || 1;
-      const ringRadius = (gridDpi * scale) / 2 + 8;
+      const scaleX = activeToken.scale?.x || 1;
+      const calculatedRadius = Math.max(30, (gridDpi * scaleX) / 2 + 10);
 
-      // 5. Build attached gold ring shape
-      const highlightCircle = OBR.buildItem()
+      // 4. Build Attached Shape using proper OBR.buildShape() chain
+      const highlightCircle = OBR.buildShape()
         .id(HIGHLIGHT_ID)
-        .type("SHAPE")
+        .shapeType("CIRCLE")
         .position(activeToken.position)
+        .radius(calculatedRadius)
+        .fillColor("#FFD700")
+        .fillOpacity(0.25)
+        .strokeColor("#FFD700")
+        .strokeWidth(6)
+        .strokeOpacity(1)
         .layer("ATTACHMENT")
         .attachedTo(activeToken.id)
-        .disableAttachmentBehavior(["ROTATION"])
-        .build({
-          shapeType: "CIRCLE",
-          radius: ringRadius,
-          style: {
-            fillColor: "#FFD700",
-            fillOpacity: 0.2,
-            strokeColor: "#FFD700",
-            strokeWidth: 6,
-            strokeOpacity: 1,
-          },
-        });
+        .locked(true)
+        .build();
 
       await OBR.scene.items.addItems([highlightCircle]);
     } catch (err) {
