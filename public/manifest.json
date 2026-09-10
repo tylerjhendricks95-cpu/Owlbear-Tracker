@@ -5,7 +5,7 @@
   "action": {
     "title": "Initiative Tracker",
     "icon": "/icon.svg",
-    "popover": "/",
+    "popover": "/Owlbear-Tracker/index.html",
     "height": 600,
     "width": 400
   }
