@@ -20,6 +20,9 @@ export interface RoomData {
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
 
+// Inline Data URL icon to ensure it loads even if /icon.svg is missing
+const CONTEXT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
+
 export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [entries, setEntries] = useState<TrackerEntry[]>([]);
@@ -30,6 +33,24 @@ export default function App() {
   useEffect(() => {
     OBR.onReady(async () => {
       setIsReady(true);
+
+      // Register context menu option (Right-Click / Selection Action)
+      try {
+        await OBR.contextMenu.create({
+          id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
+          icons: [
+            {
+              icon: CONTEXT_ICON,
+              label: "Add to Initiative",
+            },
+          ],
+          async onClick(context) {
+            await addTokensToTracker(context.items);
+          },
+        });
+      } catch (err) {
+        console.error("Failed to register context menu:", err);
+      }
 
       // Listen for room metadata updates
       OBR.room.onMetadataChange((metadata) => {
