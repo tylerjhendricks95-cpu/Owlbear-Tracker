@@ -209,11 +209,17 @@ export default function App() {
     const newEntries = entries.map((e) => {
       if (e.id !== id) return e;
       if (field === "score") return { ...e, score: val };
-      if (field === "modifier") {
-        return { ...e, modifier: val };
+      if (field === "modifier") return { ...e, modifier: val };
+      if (field === "hp") return { ...e, hp: Math.min(e.maxHp, Math.max(0, val)) };
+      if (field === "maxHp") {
+        const newMax = Math.max(1, val);
+        return {
+          ...e,
+          maxHp: newMax,
+          // Sync remaining HP with total HP when not in combat
+          hp: !inCombat ? newMax : Math.min(e.hp, newMax),
+        };
       }
-      if (field === "hp") return { ...e, hp: Math.max(0, val) };
-      if (field === "maxHp") return { ...e, maxHp: Math.max(1, val) };
       return e;
     });
 
@@ -511,16 +517,18 @@ export default function App() {
                     <input
                       type="number"
                       value={entry.maxHp}
+                      disabled={inCombat}
                       onChange={(e) =>
                         updateEntryValue(entry.id, "maxHp", parseInt(e.target.value, 10) || 0)
                       }
                       style={{
                         width: "40px",
-                        backgroundColor: "#2a2d37",
-                        color: "#888",
+                        backgroundColor: inCombat ? "#181a20" : "#2a2d37",
+                        color: inCombat ? "#666" : "#888",
                         border: "1px solid #444",
                         borderRadius: "3px",
                         padding: "2px 4px",
+                        cursor: inCombat ? "not-allowed" : "text",
                       }}
                     />
                   </div>
