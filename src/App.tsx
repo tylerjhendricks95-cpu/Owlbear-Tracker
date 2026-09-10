@@ -11,22 +11,21 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      OBR.contextMenu.create({
-        id: "com.kalo143.initiative-tracker/add-token",
-        icons: [
-          {
-            icon: "/icon.svg",
-            label: "Add to Initiative",
-            filter: {
-              every: [{ property: "type", value: "IMAGE" }],
-            },
-          },
-        ],
-        async onClick(context) {
-          await addTokensToTracker(context.items);
-        },
-      });
-
+OBR.contextMenu.create({
+  id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
+  icons: [
+    {
+      icon: "/icon.svg",
+      label: "Add to Initiative",
+      filter: {
+        every: [{ property: "type", value: "IMAGE" }],
+      },
+    },
+  ],
+  async onClick(context) {
+    await addTokensToTracker(context.items);
+  },
+});
       OBR.room.onMetadataChange((metadata) => {
         const data = metadata[METADATA_KEY] as InitiativeMetadata | undefined;
         if (data) {
