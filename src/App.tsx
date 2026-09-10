@@ -140,7 +140,7 @@ export default function App() {
     }
   };
 
-  // Highlights active token with a Gold Circle shape on map + Safe Camera Centering
+  // Highlights active token with a Gold Circle shape on map + True Center Camera Panning
   const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
     try {
       const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
@@ -158,20 +158,25 @@ export default function App() {
       const activeToken = allItems.find((item) => item.id === activeTokenId);
       if (!activeToken) return;
 
-      // 2. Safe Viewport Pan: Ensure coordinates are absolute valid numbers
-      try {
-        const currentScale = await OBR.viewport.getScale();
+      // 2. Calculate true world center of the token
+      const bounds = await OBR.scene.items.getItemBounds([activeToken.id]);
+      const centerPoint = bounds ? bounds[0]?.center : activeToken.position;
 
+      // 3. Pan Camera SAFELY to the calculated world center
+      try {
         if (
-          typeof activeToken.position.x === "number" &&
-          typeof activeToken.position.y === "number" &&
-          !isNaN(activeToken.position.x) &&
-          !isNaN(activeToken.position.y)
+          centerPoint &&
+          typeof centerPoint.x === "number" &&
+          typeof centerPoint.y === "number" &&
+          !isNaN(centerPoint.x) &&
+          !isNaN(centerPoint.y)
         ) {
+          const currentScale = await OBR.viewport.getScale();
+
           await OBR.viewport.animateTo({
             position: {
-              x: activeToken.position.x,
-              y: activeToken.position.y,
+              x: centerPoint.x,
+              y: centerPoint.y,
             },
             scale: currentScale,
           });
@@ -180,12 +185,12 @@ export default function App() {
         console.warn("Could not pan camera to active token:", err);
       }
 
-      // 3. Calculate radius to surround token cleanly
+      // 4. Calculate radius to surround token cleanly
       const gridDpi = activeToken.grid?.dpi || 150;
       const scale = activeToken.scale?.x || 1;
       const ringRadius = (gridDpi * scale) / 2 + 8;
 
-      // 4. Build attached gold ring shape
+      // 5. Build attached gold ring shape
       const highlightCircle = OBR.buildItem()
         .id(HIGHLIGHT_ID)
         .type("SHAPE")
