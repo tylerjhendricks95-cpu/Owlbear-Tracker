@@ -20,9 +20,6 @@ export interface RoomData {
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
 
-// Inline Data URL icon to ensure it loads even if /icon.svg is missing
-const CONTEXT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
-
 export default function App() {
   const [isReady, setIsReady] = useState(false);
   const [entries, setEntries] = useState<TrackerEntry[]>([]);
@@ -33,24 +30,6 @@ export default function App() {
   useEffect(() => {
     OBR.onReady(async () => {
       setIsReady(true);
-
-      // Register context menu option without restrictive filters
-      try {
-        await OBR.contextMenu.create({
-          id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
-          icons: [
-            {
-              icon: CONTEXT_ICON,
-              label: "Add to Initiative",
-            },
-          ],
-          async onClick(context) {
-            await addTokensToTracker(context.items);
-          },
-        });
-      } catch (err) {
-        console.error("Failed to register context menu:", err);
-      }
 
       // Listen for room metadata updates
       OBR.room.onMetadataChange((metadata) => {
@@ -125,6 +104,15 @@ export default function App() {
     }
 
     await saveRoomState(newEntries, activeIndex, round, inCombat);
+  };
+
+  // Button Action: Get selection directly from OBR Player API
+  const handleAddSelected = async () => {
+    const selectedIds = await OBR.player.getSelection();
+    if (!selectedIds || selectedIds.length === 0) return;
+
+    const selectedItems = await OBR.scene.items.getItems(selectedIds);
+    await addTokensToTracker(selectedItems);
   };
 
   const toggleAuto = async (id: string) => {
@@ -230,7 +218,7 @@ export default function App() {
       <h2 style={{ margin: "0 0 8px 0", textAlign: "center", fontSize: "18px" }}>Initiative Tracker</h2>
 
       {/* Round & Combat Controls */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#2a2d37", padding: "8px 12px", borderRadius: "6px", marginBottom: "12px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#2a2d37", padding: "8px 12px", borderRadius: "6px", marginBottom: "8px" }}>
         <span style={{ fontWeight: "bold", fontSize: "14px", color: "#ffd700" }}>Round: {round}</span>
         {!inCombat ? (
           <button style={{ padding: "6px 12px", backgroundColor: "#2e7d32", color: "#fff", border: "none", borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }} onClick={startCombat} disabled={entries.length === 0}>⚔️ Start Combat</button>
@@ -241,6 +229,25 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* Panel Action: Add Selected Tokens directly from UI */}
+      <button
+        onClick={handleAddSelected}
+        style={{
+          width: "100%",
+          padding: "8px",
+          backgroundColor: "#444a5a",
+          color: "#ffd700",
+          border: "1px dashed #ffd700",
+          borderRadius: "6px",
+          fontWeight: "bold",
+          cursor: "pointer",
+          marginBottom: "12px",
+          fontSize: "13px",
+        }}
+      >
+        ➕ Add Selected Tokens
+      </button>
 
       {/* Initiative Entries */}
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
