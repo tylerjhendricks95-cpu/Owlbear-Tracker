@@ -1,7 +1,8 @@
 {
   "manifest_version": 1,
   "name": "Initiative Tracker",
-  "version": "1.0.0",
+  "version": "1.0.1",
+  "manifest_version":1,
   "icon": "icon.svg",
   "author": "Tyler Hendricks",
   "description": "Custom Initiative Tracker for Owlbear Rodeo",
