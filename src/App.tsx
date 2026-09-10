@@ -20,7 +20,7 @@ export interface RoomData {
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
 
-// Inline Data URL icon to ensure it loads reliably
+// Inline Data URL icon to ensure reliable rendering
 const CONTEXT_ICON = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
 
 export default function App() {
@@ -34,12 +34,12 @@ export default function App() {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      // Remove existing menu item before re-registering
+      // 1. Remove existing context menu item to prevent duplicate ID crashes
       try {
         await OBR.contextMenu.remove("com.tylerjhendricks95-cpu.initiative-tracker/add-token");
       } catch (_) {}
 
-      // Register context menu option targeting selected map items
+      // 2. Register context menu option with explicit selection targeting
       try {
         await OBR.contextMenu.create({
           id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
@@ -66,18 +66,26 @@ export default function App() {
         console.error("Failed to register context menu:", err);
       }
 
-      // Listen for room metadata updates
-      OBR.room.onMetadataChange((metadata) => {
+      // 3. Listen for room metadata updates across clients
+      OBR.room.onMetadataChange(async (metadata) => {
         const data = metadata[METADATA_KEY] as RoomData | undefined;
         if (data) {
           setEntries(data.entries || []);
           setActiveIndex(data.activeIndex || 0);
           setRound(data.round || 1);
           setInCombat(data.inCombat || false);
+
+          // Update map highlights dynamically when turn or combat state changes
+          if (data.inCombat && data.entries.length > 0) {
+            const activeId = data.entries[data.activeIndex]?.id;
+            await highlightActiveTokenOnMap(activeId || null);
+          } else {
+            await highlightActiveTokenOnMap(null);
+          }
         }
       });
 
-      // Fetch initial room state
+      // 4. Fetch initial room state on load
       const initial = await OBR.room.getMetadata();
       const data = initial[METADATA_KEY] as RoomData | undefined;
       if (data) {
@@ -85,10 +93,16 @@ export default function App() {
         setActiveIndex(data.activeIndex || 0);
         setRound(data.round || 1);
         setInCombat(data.inCombat || false);
+
+        if (data.inCombat && data.entries.length > 0) {
+          const activeId = data.entries[data.activeIndex]?.id;
+          await highlightActiveTokenOnMap(activeId || null);
+        }
       }
     });
   }, []);
 
+  // Updates room state and handles token map highlighting
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -116,6 +130,27 @@ export default function App() {
     }
   };
 
+  // Map Highlighting Engine: Outlines the active turn's token in Gold
+  const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
+    try {
+      const allItems = await OBR.scene.items.getItems();
+      await OBR.scene.items.updateItems(allItems, (draft) => {
+        for (const item of draft) {
+          if (item.type === "IMAGE") {
+            if (activeTokenId && item.id === activeTokenId) {
+              item.outline = { color: "#FFD700", width: 8 };
+            } else if (item.outline?.color === "#FFD700") {
+              delete item.outline;
+            }
+          }
+        }
+      });
+    } catch (err) {
+      console.error("Failed to update map highlight:", err);
+    }
+  };
+
+  // Add tokens without rolling automatically yet
   const addTokensToTracker = async (items: Item[]) => {
     const currentMetadata = (await OBR.room.getMetadata())[METADATA_KEY] as RoomData | undefined;
     const existingEntries = currentMetadata?.entries || [];
@@ -125,14 +160,13 @@ export default function App() {
       if (newEntries.some((e) => e.id === item.id)) continue;
 
       const tokenName = item.name || "Token";
-      const roll = Math.floor(Math.random() * 20) + 1;
 
       newEntries.push({
         id: item.id,
         name: tokenName,
         isAuto: true,
         modifier: 0,
-        score: roll,
+        score: 0, // Unrolled until combat starts
         hp: 10,
         maxHp: 10,
       });
@@ -155,7 +189,8 @@ export default function App() {
       const nextIsAuto = !entry.isAuto;
       let newScore = entry.score;
 
-      if (nextIsAuto) {
+      // If user switches back to auto during active combat, auto-roll immediately
+      if (nextIsAuto && inCombat) {
         const roll = Math.floor(Math.random() * 20) + 1;
         newScore = roll + entry.modifier;
       }
@@ -175,8 +210,7 @@ export default function App() {
       if (e.id !== id) return e;
       if (field === "score") return { ...e, score: val };
       if (field === "modifier") {
-        const roll = Math.floor(Math.random() * 20) + 1;
-        return { ...e, modifier: val, score: e.isAuto ? roll + val : e.score };
+        return { ...e, modifier: val };
       }
       if (field === "hp") return { ...e, hp: Math.max(0, val) };
       if (field === "maxHp") return { ...e, maxHp: Math.max(1, val) };
@@ -196,9 +230,19 @@ export default function App() {
     await saveRoomState(newEntries, activeIndex, round, inCombat);
   };
 
+  // Triggers rolls for all Auto entries and sorts by highest score
   const startCombat = async () => {
     if (entries.length === 0) return;
-    const sorted = [...entries].sort((a, b) => b.score - a.score);
+
+    const rolledEntries = entries.map((entry) => {
+      if (entry.isAuto) {
+        const roll = Math.floor(Math.random() * 20) + 1;
+        return { ...entry, score: roll + entry.modifier };
+      }
+      return entry;
+    });
+
+    const sorted = [...rolledEntries].sort((a, b) => b.score - a.score);
     await saveRoomState(sorted, 0, 1, true);
   };
 
@@ -228,43 +272,90 @@ export default function App() {
     await saveRoomState(newEntries, nextIdx, round, inCombat && newEntries.length > 0);
   };
 
-  const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
-    const allItems = await OBR.scene.items.getItems();
-    await OBR.scene.items.updateItems(allItems, (draft) => {
-      for (const item of draft) {
-        if (item.type === "IMAGE") {
-          if (activeTokenId && item.id === activeTokenId) {
-            item.outline = { color: "#FFD700", width: 8 };
-          } else if (item.outline?.color === "#FFD700") {
-            delete item.outline;
-          }
-        }
-      }
-    });
-  };
-
   if (!isReady) {
     return <div style={{ padding: 16, color: "#fff" }}>Connecting to Owlbear Rodeo...</div>;
   }
 
   return (
-    <div style={{ padding: "12px", color: "#fff", backgroundColor: "#1e1e24", minHeight: "100vh", boxSizing: "border-box", fontFamily: "sans-serif" }}>
-      <h2 style={{ margin: "0 0 8px 0", textAlign: "center", fontSize: "18px" }}>Initiative Tracker</h2>
+    <div
+      style={{
+        padding: "12px",
+        color: "#fff",
+        backgroundColor: "#1e1e24",
+        minHeight: "100vh",
+        boxSizing: "border-box",
+        fontFamily: "sans-serif",
+      }}
+    >
+      <h2 style={{ margin: "0 0 8px 0", textAlign: "center", fontSize: "18px" }}>
+        Initiative Tracker
+      </h2>
 
       {/* Round & Combat Controls */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", backgroundColor: "#2a2d37", padding: "8px 12px", borderRadius: "6px", marginBottom: "8px" }}>
-        <span style={{ fontWeight: "bold", fontSize: "14px", color: "#ffd700" }}>Round: {round}</span>
+      <div
+        style={{
+          display: "flex",
+          justify: "space-between",
+          alignItems: "center",
+          backgroundColor: "#2a2d37",
+          padding: "8px 12px",
+          borderRadius: "6px",
+          marginBottom: "8px",
+        }}
+      >
+        <span style={{ fontWeight: "bold", fontSize: "14px", color: "#ffd700" }}>
+          Round: {round}
+        </span>
         {!inCombat ? (
-          <button style={{ padding: "6px 12px", backgroundColor: "#2e7d32", color: "#fff", border: "none", borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }} onClick={startCombat} disabled={entries.length === 0}>⚔️ Start Combat</button>
+          <button
+            style={{
+              padding: "6px 12px",
+              backgroundColor: "#2e7d32",
+              color: "#fff",
+              border: "none",
+              borderRadius: "4px",
+              fontWeight: "bold",
+              cursor: "pointer",
+            }}
+            onClick={startCombat}
+            disabled={entries.length === 0}
+          >
+            ⚔️ Start Combat
+          </button>
         ) : (
           <div style={{ display: "flex", gap: "6px" }}>
-            <button style={{ padding: "6px 12px", backgroundColor: "#1976d2", color: "#fff", border: "none", borderRadius: "4px", fontWeight: "bold", cursor: "pointer" }} onClick={nextTurn}>Next Turn ▶</button>
-            <button style={{ padding: "6px 8px", backgroundColor: "#c62828", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }} onClick={endCombat}>End</button>
+            <button
+              style={{
+                padding: "6px 12px",
+                backgroundColor: "#1976d2",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                fontWeight: "bold",
+                cursor: "pointer",
+              }}
+              onClick={nextTurn}
+            >
+              Next Turn ▶
+            </button>
+            <button
+              style={{
+                padding: "6px 8px",
+                backgroundColor: "#c62828",
+                color: "#fff",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+              onClick={endCombat}
+            >
+              End
+            </button>
           </div>
         )}
       </div>
 
-      {/* Panel Action: Add Selected Tokens directly from UI */}
+      {/* Panel Action Button */}
       <button
         onClick={handleAddSelected}
         style={{
@@ -300,16 +391,41 @@ export default function App() {
                 opacity: isUnconscious ? 0.7 : 1,
               }}
             >
-              {/* Header: Name + Unconscious Status + Remove */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+              {/* Token Name & Delete */}
+              <div
+                style={{
+                  display: "flex",
+                  justify: "space-between",
+                  alignItems: "center",
+                  marginBottom: "6px",
+                }}
+              >
                 <span style={{ fontWeight: "bold", fontSize: "15px" }}>
-                  {isActive && "⚔️ "}{entry.name} {isUnconscious && <span style={{ color: "#f44336", fontSize: "12px", marginLeft: "4px" }}>💀 Unconscious</span>}
+                  {isActive && "⚔️ "}{entry.name}{" "}
+                  {isUnconscious && (
+                    <span style={{ color: "#f44336", fontSize: "12px", marginLeft: "4px" }}>
+                      💀 Unconscious
+                    </span>
+                  )}
                 </span>
-                <button style={{ background: "none", border: "none", color: "#888", cursor: "pointer" }} onClick={() => removeEntry(entry.id)}>✕</button>
+                <button
+                  style={{ background: "none", border: "none", color: "#888", cursor: "pointer" }}
+                  onClick={() => removeEntry(entry.id)}
+                >
+                  ✕
+                </button>
               </div>
 
               {/* Initiative Controls */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", marginBottom: "8px" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  fontSize: "12px",
+                  marginBottom: "8px",
+                }}
+              >
                 <button
                   style={{
                     padding: "2px 6px",
@@ -332,8 +448,17 @@ export default function App() {
                     <input
                       type="number"
                       value={entry.modifier}
-                      onChange={(e) => updateEntryValue(entry.id, "modifier", parseInt(e.target.value, 10) || 0)}
-                      style={{ width: "40px", backgroundColor: "#1e1e24", color: "#fff", border: "1px solid #444", borderRadius: "3px", padding: "2px" }}
+                      onChange={(e) =>
+                        updateEntryValue(entry.id, "modifier", parseInt(e.target.value, 10) || 0)
+                      }
+                      style={{
+                        width: "40px",
+                        backgroundColor: "#1e1e24",
+                        color: "#fff",
+                        border: "1px solid #444",
+                        borderRadius: "3px",
+                        padding: "2px",
+                      }}
                     />
                   </div>
                 ) : (
@@ -342,8 +467,17 @@ export default function App() {
                     <input
                       type="number"
                       value={entry.score}
-                      onChange={(e) => updateEntryValue(entry.id, "score", parseInt(e.target.value, 10) || 0)}
-                      style={{ width: "45px", backgroundColor: "#1e1e24", color: "#fff", border: "1px solid #444", borderRadius: "3px", padding: "2px" }}
+                      onChange={(e) =>
+                        updateEntryValue(entry.id, "score", parseInt(e.target.value, 10) || 0)
+                      }
+                      style={{
+                        width: "45px",
+                        backgroundColor: "#1e1e24",
+                        color: "#fff",
+                        border: "1px solid #444",
+                        borderRadius: "3px",
+                        padding: "2px",
+                      }}
                     />
                   </div>
                 )}
@@ -353,7 +487,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* HP Tracking Section */}
+              {/* HP Controls */}
               <div style={{ backgroundColor: "#1e1e24", padding: "6px", borderRadius: "4px", fontSize: "12px" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
@@ -361,24 +495,93 @@ export default function App() {
                     <input
                       type="number"
                       value={entry.hp}
-                      onChange={(e) => updateEntryValue(entry.id, "hp", parseInt(e.target.value, 10) || 0)}
-                      style={{ width: "40px", backgroundColor: "#2a2d37", color: "#fff", border: "1px solid #444", borderRadius: "3px", padding: "2px 4px" }}
+                      onChange={(e) =>
+                        updateEntryValue(entry.id, "hp", parseInt(e.target.value, 10) || 0)
+                      }
+                      style={{
+                        width: "40px",
+                        backgroundColor: "#2a2d37",
+                        color: "#fff",
+                        border: "1px solid #444",
+                        borderRadius: "3px",
+                        padding: "2px 4px",
+                      }}
                     />
                     <span>/</span>
                     <input
                       type="number"
                       value={entry.maxHp}
-                      onChange={(e) => updateEntryValue(entry.id, "maxHp", parseInt(e.target.value, 10) || 0)}
-                      style={{ width: "40px", backgroundColor: "#2a2d37", color: "#888", border: "1px solid #444", borderRadius: "3px", padding: "2px 4px" }}
+                      onChange={(e) =>
+                        updateEntryValue(entry.id, "maxHp", parseInt(e.target.value, 10) || 0)
+                      }
+                      style={{
+                        width: "40px",
+                        backgroundColor: "#2a2d37",
+                        color: "#888",
+                        border: "1px solid #444",
+                        borderRadius: "3px",
+                        padding: "2px 4px",
+                      }}
                     />
                   </div>
 
-                  {/* Quick Adjust Buttons */}
                   <div style={{ display: "flex", gap: "3px" }}>
-                    <button style={{ padding: "2px 5px", backgroundColor: "#c62828", color: "#fff", border: "none", borderRadius: "3px", cursor: "pointer", fontSize: "10px" }} onClick={() => adjustHp(entry.id, -5)}>-5</button>
-                    <button style={{ padding: "2px 5px", backgroundColor: "#d32f2f", color: "#fff", border: "none", borderRadius: "3px", cursor: "pointer", fontSize: "10px" }} onClick={() => adjustHp(entry.id, -1)}>-1</button>
-                    <button style={{ padding: "2px 5px", backgroundColor: "#388e3c", color: "#fff", border: "none", borderRadius: "3px", cursor: "pointer", fontSize: "10px" }} onClick={() => adjustHp(entry.id, 1)}>+1</button>
-                    <button style={{ padding: "2px 5px", backgroundColor: "#2e7d32", color: "#fff", border: "none", borderRadius: "3px", cursor: "pointer", fontSize: "10px" }} onClick={() => adjustHp(entry.id, 5)}>+5</button>
+                    <button
+                      style={{
+                        padding: "2px 5px",
+                        backgroundColor: "#c62828",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "3px",
+                        cursor: "pointer",
+                        fontSize: "10px",
+                      }}
+                      onClick={() => adjustHp(entry.id, -5)}
+                    >
+                      -5
+                    </button>
+                    <button
+                      style={{
+                        padding: "2px 5px",
+                        backgroundColor: "#d32f2f",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "3px",
+                        cursor: "pointer",
+                        fontSize: "10px",
+                      }}
+                      onClick={() => adjustHp(entry.id, -1)}
+                    >
+                      -1
+                    </button>
+                    <button
+                      style={{
+                        padding: "2px 5px",
+                        backgroundColor: "#388e3c",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "3px",
+                        cursor: "pointer",
+                        fontSize: "10px",
+                      }}
+                      onClick={() => adjustHp(entry.id, 1)}
+                    >
+                      +1
+                    </button>
+                    <button
+                      style={{
+                        padding: "2px 5px",
+                        backgroundColor: "#2e7d32",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "3px",
+                        cursor: "pointer",
+                        fontSize: "10px",
+                      }}
+                      onClick={() => adjustHp(entry.id, 5)}
+                    >
+                      +5
+                    </button>
                   </div>
                 </div>
               </div>
