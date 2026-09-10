@@ -75,7 +75,7 @@ export default function App() {
           setRound(data.round || 1);
           setInCombat(data.inCombat || false);
 
-          // Update map highlights dynamically when turn or combat state changes
+          // Highlight the current token using native OBR selection
           if (data.inCombat && data.entries.length > 0) {
             const activeId = data.entries[data.activeIndex]?.id;
             await highlightActiveTokenOnMap(activeId || null);
@@ -102,7 +102,7 @@ export default function App() {
     });
   }, []);
 
-  // Updates room state and handles token map highlighting
+  // Updates room state and syncs map selection
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -130,23 +130,16 @@ export default function App() {
     }
   };
 
-  // Map Highlighting Engine: Outlines the active turn's token in Gold
+  // Option 2 Implementation: Uses OBR.player.select to trigger native token highlighting
   const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
     try {
-      const allItems = await OBR.scene.items.getItems();
-      await OBR.scene.items.updateItems(allItems, (draft) => {
-        for (const item of draft) {
-          if (item.type === "IMAGE") {
-            if (activeTokenId && item.id === activeTokenId) {
-              item.outline = { color: "#FFD700", width: 8 };
-            } else if (item.outline?.color === "#FFD700") {
-              delete item.outline;
-            }
-          }
-        }
-      });
+      if (activeTokenId) {
+        await OBR.player.select([activeTokenId]);
+      } else {
+        await OBR.player.select([]);
+      }
     } catch (err) {
-      console.error("Failed to update map highlight:", err);
+      console.error("Failed to set active token selection:", err);
     }
   };
 
@@ -189,7 +182,7 @@ export default function App() {
       const nextIsAuto = !entry.isAuto;
       let newScore = entry.score;
 
-      // If user switches back to auto during active combat, auto-roll immediately
+      // If switching back to auto during active combat, auto-roll immediately
       if (nextIsAuto && inCombat) {
         const roll = Math.floor(Math.random() * 20) + 1;
         newScore = roll + entry.modifier;
@@ -216,7 +209,6 @@ export default function App() {
         return {
           ...e,
           maxHp: newMax,
-          // Sync remaining HP with total HP when not in combat
           hp: !inCombat ? newMax : Math.min(e.hp, newMax),
         };
       }
@@ -301,7 +293,7 @@ export default function App() {
       <div
         style={{
           display: "flex",
-          justify: "space-between",
+          justifyContent: "space-between",
           alignItems: "center",
           backgroundColor: "#2a2d37",
           padding: "8px 12px",
