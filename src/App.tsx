@@ -9,7 +9,14 @@ export interface TrackerEntry {
   score: number;
   hp: number;
   maxHp: number;
-  conditions: string[]; // Active status tags
+  conditions: string[];
+}
+
+export interface SavedCharacter {
+  id: string;
+  name: string;
+  modifier: number;
+  maxHp: number;
 }
 
 export interface RoomData {
@@ -20,6 +27,7 @@ export interface RoomData {
 }
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
+const LOCAL_STORAGE_REPO_KEY = "initiative_tracker_repository";
 
 const CONTEXT_ICON =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
@@ -46,8 +54,73 @@ export default function App() {
   const [round, setRound] = useState<number>(1);
   const [inCombat, setInCombat] = useState<boolean>(false);
 
+  // Repository States
+  const [repository, setRepository] = useState<SavedCharacter[]>([]);
+  const [showRepo, setShowRepo] = useState<boolean>(false);
+  const [newCharName, setNewCharName] = useState<string>("");
+  const [newCharMod, setNewCharMod] = useState<number>(0);
+  const [newCharHp, setNewCharHp] = useState<number>(10);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const entryRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  // Load Saved Characters from LocalStorage
+  useEffect(() => {
+    const saved = localStorage.getItem(LOCAL_STORAGE_REPO_KEY);
+    if (saved) {
+      try {
+        setRepository(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse repository data", e);
+      }
+    }
+  }, []);
+
+  // Save Repository to LocalStorage on update
+  const saveRepository = (newRepo: SavedCharacter[]) => {
+    setRepository(newRepo);
+    localStorage.setItem(LOCAL_STORAGE_REPO_KEY, JSON.stringify(newRepo));
+  };
+
+  const handleAddCharacterToRepo = () => {
+    if (!newCharName.trim()) return;
+
+    const newChar: SavedCharacter = {
+      id: "repo-" + Date.now(),
+      name: newCharName.trim(),
+      modifier: newCharMod,
+      maxHp: newCharHp,
+    };
+
+    const updated = [...repository, newChar];
+    saveRepository(updated);
+
+    // Reset Form
+    setNewCharName("");
+    setNewCharMod(0);
+    setNewCharHp(10);
+  };
+
+  const handleDeleteFromRepo = (id: string) => {
+    const updated = repository.filter((c) => c.id !== id);
+    saveRepository(updated);
+  };
+
+  const handleAddRepoToTracker = async (char: SavedCharacter) => {
+    const newEntry: TrackerEntry = {
+      id: "entry-" + Date.now() + "-" + Math.random().toString(36).substr(2, 4),
+      name: char.name,
+      isAuto: true,
+      modifier: char.modifier,
+      score: 0,
+      hp: char.maxHp,
+      maxHp: char.maxHp,
+      conditions: [],
+    };
+
+    const updatedEntries = [...entries, newEntry];
+    await saveRoomState(updatedEntries, activeIndex, round, inCombat);
+  };
 
   useEffect(() => {
     OBR.onReady(async () => {
@@ -130,7 +203,7 @@ export default function App() {
       const timer = setTimeout(updateWindowHeight, 50);
       return () => clearTimeout(timer);
     }
-  }, [entries, isReady]);
+  }, [entries, repository, showRepo, isReady]);
 
   useEffect(() => {
     if (inCombat && entryRefs.current[activeIndex]) {
@@ -324,7 +397,6 @@ export default function App() {
         fontFamily: "sans-serif",
       }}
     >
-      {/* Dark Theme Scrollbar Styles */}
       <style>{`
         ::-webkit-scrollbar {
           width: 8px;
@@ -422,24 +494,181 @@ export default function App() {
           )}
         </div>
 
-        {/* Add Selected Button */}
-        <button
-          onClick={handleAddSelected}
-          style={{
-            width: "100%",
-            padding: "8px",
-            backgroundColor: "#444a5a",
-            color: "#ffd700",
-            border: "1px dashed #ffd700",
-            borderRadius: "6px",
-            fontWeight: "bold",
-            cursor: "pointer",
-            marginBottom: "12px",
-            fontSize: "13px",
-          }}
-        >
-          ➕ Add Selected Tokens
-        </button>
+        {/* Add Selected & Repo Toggle */}
+        <div style={{ display: "flex", gap: "6px", marginBottom: "12px" }}>
+          <button
+            onClick={handleAddSelected}
+            style={{
+              flex: 1,
+              padding: "8px",
+              backgroundColor: "#444a5a",
+              color: "#ffd700",
+              border: "1px dashed #ffd700",
+              borderRadius: "6px",
+              fontWeight: "bold",
+              cursor: "pointer",
+              fontSize: "12px",
+            }}
+          >
+            ➕ Selected Tokens
+          </button>
+          <button
+            onClick={() => setShowRepo(!showRepo)}
+            style={{
+              padding: "8px 12px",
+              backgroundColor: showRepo ? "#ffd700" : "#2a2d37",
+              color: showRepo ? "#000" : "#ffd700",
+              border: "1px solid #ffd700",
+              borderRadius: "6px",
+              fontWeight: "bold",
+              cursor: "pointer",
+              fontSize: "12px",
+            }}
+          >
+            📚 Library ({repository.length})
+          </button>
+        </div>
+
+        {/* Saved Character Repository Section */}
+        {showRepo && (
+          <div
+            style={{
+              backgroundColor: "#2a2d37",
+              padding: "10px",
+              borderRadius: "6px",
+              marginBottom: "12px",
+              border: "1px solid #444a5a",
+            }}
+          >
+            <div style={{ fontWeight: "bold", fontSize: "13px", marginBottom: "8px", color: "#ffd700" }}>
+              Character Library
+            </div>
+
+            {/* Form to save new template */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px" }}>
+              <input
+                type="text"
+                placeholder="Character/Monster Name"
+                value={newCharName}
+                onChange={(e) => setNewCharName(e.target.value)}
+                style={{
+                  padding: "4px 8px",
+                  backgroundColor: "#1e1e24",
+                  color: "#fff",
+                  border: "1px solid #444",
+                  borderRadius: "4px",
+                  fontSize: "12px",
+                }}
+              />
+              <div style={{ display: "flex", gap: "6px" }}>
+                <input
+                  type="number"
+                  placeholder="Init Mod"
+                  value={newCharMod}
+                  onChange={(e) => setNewCharMod(parseInt(e.target.value, 10) || 0)}
+                  style={{
+                    width: "50%",
+                    padding: "4px 8px",
+                    backgroundColor: "#1e1e24",
+                    color: "#fff",
+                    border: "1px solid #444",
+                    borderRadius: "4px",
+                    fontSize: "12px",
+                  }}
+                />
+                <input
+                  type="number"
+                  placeholder="Max HP"
+                  value={newCharHp}
+                  onChange={(e) => setNewCharHp(parseInt(e.target.value, 10) || 1)}
+                  style={{
+                    width: "50%",
+                    padding: "4px 8px",
+                    backgroundColor: "#1e1e24",
+                    color: "#fff",
+                    border: "1px solid #444",
+                    borderRadius: "4px",
+                    fontSize: "12px",
+                  }}
+                />
+              </div>
+              <button
+                onClick={handleAddCharacterToRepo}
+                style={{
+                  padding: "6px",
+                  backgroundColor: "#2e7d32",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                }}
+              >
+                💾 Save Character Template
+              </button>
+            </div>
+
+            {/* List of saved templates */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", maxHeight: "150px", overflowY: "auto" }}>
+              {repository.length === 0 ? (
+                <div style={{ fontSize: "11px", color: "#aaa", textAlign: "center" }}>No saved templates yet.</div>
+              ) : (
+                repository.map((char) => (
+                  <div
+                    key={char.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      backgroundColor: "#1e1e24",
+                      padding: "4px 8px",
+                      borderRadius: "4px",
+                      fontSize: "12px",
+                    }}
+                  >
+                    <div>
+                      <span style={{ fontWeight: "bold" }}>{char.name}</span>
+                      <span style={{ color: "#aaa", fontSize: "10px", marginLeft: "6px" }}>
+                        (Mod: {char.modifier >= 0 ? `+${char.modifier}` : char.modifier} | HP: {char.maxHp})
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: "4px" }}>
+                      <button
+                        onClick={() => handleAddRepoToTracker(char)}
+                        style={{
+                          padding: "2px 6px",
+                          backgroundColor: "#1976d2",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "3px",
+                          cursor: "pointer",
+                          fontSize: "10px",
+                        }}
+                      >
+                        ➕ Add
+                      </button>
+                      <button
+                        onClick={() => handleDeleteFromRepo(char.id)}
+                        style={{
+                          padding: "2px 6px",
+                          backgroundColor: "#c62828",
+                          color: "#fff",
+                          border: "none",
+                          borderRadius: "3px",
+                          cursor: "pointer",
+                          fontSize: "10px",
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Initiative Entries */}
