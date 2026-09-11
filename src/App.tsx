@@ -21,24 +21,22 @@ export interface RoomData {
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
 
-// Inline Data URL icon to prevent broken assets
 const CONTEXT_ICON =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
 
-// Preset conditions sorted alphabetically
 const PRESET_CONDITIONS = [
-  { name: "Blessed", color: "#0288d1" },       // Blue
-  { name: "Blinded", color: "#546e7a" },       // Slate
-  { name: "Charmed", color: "#e91e63" },       // Bright Pink
-  { name: "Concentrating", color: "#f57f17" }, // Amber Gold
-  { name: "Frightened", color: "#c62828" },    // Red
-  { name: "Grappled", color: "#8d6e63" },      // Brown
-  { name: "Invisible", color: "#00acc1" },     // Cyan
-  { name: "Paralyzed", color: "#b71c1c" },     // Dark Red
-  { name: "Poisoned", color: "#2e7d32" },      // Green
-  { name: "Prone", color: "#7b1fa2" },         // Purple
-  { name: "Restrained", color: "#d81b60" },    // Deep Pink
-  { name: "Stunned", color: "#ed6c02" },       // Orange
+  { name: "Blessed", color: "#0288d1" },
+  { name: "Blinded", color: "#546e7a" },
+  { name: "Charmed", color: "#e91e63" },
+  { name: "Concentrating", color: "#f57f17" },
+  { name: "Frightened", color: "#c62828" },
+  { name: "Grappled", color: "#8d6e63" },
+  { name: "Invisible", color: "#00acc1" },
+  { name: "Paralyzed", color: "#b71c1c" },
+  { name: "Poisoned", color: "#2e7d32" },
+  { name: "Prone", color: "#7b1fa2" },
+  { name: "Restrained", color: "#d81b60" },
+  { name: "Stunned", color: "#ed6c02" },
 ];
 
 export default function App() {
@@ -49,19 +47,16 @@ export default function App() {
   const [inCombat, setInCombat] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  // Ref array to store references to each entry DOM card
   const entryRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     OBR.onReady(async () => {
       setIsReady(true);
 
-      // 1. Clean up existing context menu item
       try {
         await OBR.contextMenu.remove("com.tylerjhendricks95-cpu.initiative-tracker/add-token");
       } catch (_) {}
 
-      // 2. Register context menu option
       try {
         await OBR.contextMenu.create({
           id: "com.tylerjhendricks95-cpu.initiative-tracker/add-token",
@@ -88,7 +83,6 @@ export default function App() {
         console.error("Failed to register context menu:", err);
       }
 
-      // 3. Listen for room metadata updates across clients
       OBR.room.onMetadataChange(async (metadata) => {
         const data = metadata[METADATA_KEY] as RoomData | undefined;
         if (data) {
@@ -104,7 +98,6 @@ export default function App() {
         }
       });
 
-      // 4. Fetch initial room state on load
       const initial = await OBR.room.getMetadata();
       const data = initial[METADATA_KEY] as RoomData | undefined;
       if (data) {
@@ -121,7 +114,6 @@ export default function App() {
     });
   }, []);
 
-  // Measure content size and set Owlbear window height dynamically
   useEffect(() => {
     const updateWindowHeight = async () => {
       if (!containerRef.current) return;
@@ -140,7 +132,6 @@ export default function App() {
     }
   }, [entries, isReady]);
 
-  // Smooth scroll to the active player or monster when the turn changes
   useEffect(() => {
     if (inCombat && entryRefs.current[activeIndex]) {
       entryRefs.current[activeIndex]?.scrollIntoView({
@@ -150,7 +141,6 @@ export default function App() {
     }
   }, [activeIndex, inCombat]);
 
-  // Save state to room metadata and automatically select active token
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -334,92 +324,123 @@ export default function App() {
         fontFamily: "sans-serif",
       }}
     >
-      <h2 style={{ margin: "0 0 8px 0", textAlign: "center", fontSize: "18px" }}>
-        Initiative Tracker
-      </h2>
+      {/* Dark Theme Scrollbar Styles */}
+      <style>{`
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: #1e1e24;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: #444a5a;
+          border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: #5a6175;
+        }
+      `}</style>
 
-      {/* Round & Combat Controls */}
+      {/* Sticky Header with Controls */}
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          backgroundColor: "#2a2d37",
-          padding: "8px 12px",
-          borderRadius: "6px",
-          marginBottom: "8px",
+          position: "sticky",
+          top: "-12px",
+          backgroundColor: "#1e1e24",
+          paddingTop: "12px",
+          marginTop: "-12px",
+          zIndex: 10,
+          boxShadow: "0 4px 6px -1px rgba(0,0,0,0.3)",
         }}
       >
-        <span style={{ fontWeight: "bold", fontSize: "14px", color: "#ffd700" }}>
-          Round: {round}
-        </span>
-        {!inCombat ? (
-          <button
-            style={{
-              padding: "6px 12px",
-              backgroundColor: "#2e7d32",
-              color: "#fff",
-              border: "none",
-              borderRadius: "4px",
-              fontWeight: "bold",
-              cursor: "pointer",
-            }}
-            onClick={startCombat}
-            disabled={entries.length === 0}
-          >
-            ⚔️ Start Combat
-          </button>
-        ) : (
-          <div style={{ display: "flex", gap: "6px" }}>
+        <h2 style={{ margin: "0 0 8px 0", textAlign: "center", fontSize: "18px" }}>
+          Initiative Tracker
+        </h2>
+
+        {/* Round & Combat Controls */}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            backgroundColor: "#2a2d37",
+            padding: "8px 12px",
+            borderRadius: "6px",
+            marginBottom: "8px",
+          }}
+        >
+          <span style={{ fontWeight: "bold", fontSize: "14px", color: "#ffd700" }}>
+            Round: {round}
+          </span>
+          {!inCombat ? (
             <button
               style={{
                 padding: "6px 12px",
-                backgroundColor: "#1976d2",
+                backgroundColor: "#2e7d32",
                 color: "#fff",
                 border: "none",
                 borderRadius: "4px",
                 fontWeight: "bold",
                 cursor: "pointer",
               }}
-              onClick={nextTurn}
+              onClick={startCombat}
+              disabled={entries.length === 0}
             >
-              Next Turn ▶
+              ⚔️ Start Combat
             </button>
-            <button
-              style={{
-                padding: "6px 8px",
-                backgroundColor: "#c62828",
-                color: "#fff",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-              }}
-              onClick={endCombat}
-            >
-              End
-            </button>
-          </div>
-        )}
-      </div>
+          ) : (
+            <div style={{ display: "flex", gap: "6px" }}>
+              <button
+                style={{
+                  padding: "6px 12px",
+                  backgroundColor: "#1976d2",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                }}
+                onClick={nextTurn}
+              >
+                Next Turn ▶
+              </button>
+              <button
+                style={{
+                  padding: "6px 8px",
+                  backgroundColor: "#c62828",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                }}
+                onClick={endCombat}
+              >
+                End
+              </button>
+            </div>
+          )}
+        </div>
 
-      {/* Panel Action Button */}
-      <button
-        onClick={handleAddSelected}
-        style={{
-          width: "100%",
-          padding: "8px",
-          backgroundColor: "#444a5a",
-          color: "#ffd700",
-          border: "1px dashed #ffd700",
-          borderRadius: "6px",
-          fontWeight: "bold",
-          cursor: "pointer",
-          marginBottom: "12px",
-          fontSize: "13px",
-        }}
-      >
-        ➕ Add Selected Tokens
-      </button>
+        {/* Add Selected Button */}
+        <button
+          onClick={handleAddSelected}
+          style={{
+            width: "100%",
+            padding: "8px",
+            backgroundColor: "#444a5a",
+            color: "#ffd700",
+            border: "1px dashed #ffd700",
+            borderRadius: "6px",
+            fontWeight: "bold",
+            cursor: "pointer",
+            marginBottom: "12px",
+            fontSize: "13px",
+          }}
+        >
+          ➕ Add Selected Tokens
+        </button>
+      </div>
 
       {/* Initiative Entries */}
       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
