@@ -20,7 +20,6 @@ export interface RoomData {
 }
 
 const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
-const HIGHLIGHT_ID = "initiative-tracker-active-highlight";
 
 // Inline Data URL icon to prevent broken assets
 const CONTEXT_ICON =
@@ -28,11 +27,18 @@ const CONTEXT_ICON =
 
 // Common preset conditions with custom color coding
 const PRESET_CONDITIONS = [
-  { name: "Poisoned", color: "#2e7d32" },
-  { name: "Stunned", color: "#ed6c02" },
-  { name: "Blessed", color: "#0288d1" },
-  { name: "Prone", color: "#7b1fa2" },
-  { name: "Frightened", color: "#c62828" },
+  { name: "Blessed", color: "#0288d1" },       // Blue
+  { name: "Blinded", color: "#546e7a" },       // Slate
+  { name: "Charmed", color: "#e91e63" },       // Bright Pink
+  { name: "Concentrating", color: "#f57f17" }, // Amber Gold
+  { name: "Frightened", color: "#c62828" },    // Red
+  { name: "Grappled", color: "#8d6e63" },      // Brown
+  { name: "Invisible", color: "#00acc1" },     // Cyan
+  { name: "Paralyzed", color: "#b71c1c" },     // Dark Red
+  { name: "Poisoned", color: "#2e7d32" },      // Green
+  { name: "Prone", color: "#7b1fa2" },         // Purple
+  { name: "Restrained", color: "#d81b60" },    // Deep Pink
+  { name: "Stunned", color: "#ed6c02" },       // Orange
 ];
 
 export default function App() {
@@ -89,9 +95,7 @@ export default function App() {
 
           if (data.inCombat && data.entries.length > 0) {
             const activeId = data.entries[data.activeIndex]?.id;
-            await focusAndHighlightActiveToken(activeId || null);
-          } else {
-            await focusAndHighlightActiveToken(null);
+            if (activeId) await OBR.player.select([activeId]);
           }
         }
       });
@@ -107,59 +111,13 @@ export default function App() {
 
         if (data.inCombat && data.entries.length > 0) {
           const activeId = data.entries[data.activeIndex]?.id;
-          await focusAndHighlightActiveToken(activeId || null);
+          if (activeId) await OBR.player.select([activeId]);
         }
       }
     });
   }, []);
 
-  // Selects the active token and attaches the visual ring
-  const focusAndHighlightActiveToken = async (activeTokenId: string | null) => {
-    try {
-      // 1. Remove existing highlight ring
-      const allItems = await OBR.scene.items.getItems();
-      if (allItems.some((item) => item.id === HIGHLIGHT_ID)) {
-        await OBR.scene.items.deleteItems([HIGHLIGHT_ID]);
-      }
-
-      if (!activeTokenId) return;
-
-      // 2. Select the active token on the board using OBR.player.select
-      await OBR.player.select([activeTokenId]);
-
-      const targetToken = allItems.find((item) => item.id === activeTokenId);
-      if (!targetToken) return;
-
-      // 3. Calculate center position and sizing for the attachment ring
-      const gridDpi = targetToken.grid?.dpi || 150;
-      const width = gridDpi * (targetToken.scale?.x || 1);
-      const height = gridDpi * (targetToken.scale?.y || 1);
-
-      const ring = OBR.buildShape()
-        .id(HIGHLIGHT_ID)
-        .shapeType("CIRCLE")
-        .position({
-          x: targetToken.position.x + width / 2,
-          y: targetToken.position.y + height / 2,
-        })
-        .radius(Math.max(30, width / 2 + 10))
-        .fillColor("#FFD700")
-        .fillOpacity(0.25)
-        .strokeColor("#FFD700")
-        .strokeWidth(5)
-        .strokeOpacity(1)
-        .layer("ATTACHMENT")
-        .attachedTo(targetToken.id)
-        .locked(true)
-        .build();
-
-      await OBR.scene.items.addItems([ring]);
-    } catch (err) {
-      console.error("Failed to select or highlight active token:", err);
-    }
-  };
-
-  // Save state to metadata and update map highlight/selection
+  // Save state to room metadata and automatically select active token
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -181,9 +139,10 @@ export default function App() {
     });
 
     if (newInCombat && newEntries.length > 0) {
-      await focusAndHighlightActiveToken(newEntries[newActiveIdx]?.id || null);
-    } else {
-      await focusAndHighlightActiveToken(null);
+      const activeId = newEntries[newActiveIdx]?.id;
+      if (activeId) {
+        await OBR.player.select([activeId]);
+      }
     }
   };
 
@@ -197,7 +156,7 @@ export default function App() {
 
       const tokenName = item.name || "Token";
       
-      // Tokens starting with "**" are set to Manual (isAuto: false)
+      // Tokens starting with "**" default to Manual (isAuto: false)
       const isManualToken = tokenName.startsWith("**");
 
       newEntries.push({
