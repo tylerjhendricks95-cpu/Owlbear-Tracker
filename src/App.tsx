@@ -25,7 +25,7 @@ const METADATA_KEY = "com.tylerjhendricks95-cpu.initiative-tracker/metadata";
 const CONTEXT_ICON =
   "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23FFD700'><path d='M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'/></svg>";
 
-// Common preset conditions with custom color coding
+// Preset conditions sorted alphabetically
 const PRESET_CONDITIONS = [
   { name: "Blessed", color: "#0288d1" },       // Blue
   { name: "Blinded", color: "#546e7a" },       // Slate
@@ -633,14 +633,13 @@ export default function App() {
                 })}
               </div>
 
-              {/* Condition Quick Selector */}
+              {/* Condition Quick Selector (Wrapping Flexbox) */}
               <div
                 style={{
                   marginTop: "6px",
                   display: "flex",
+                  flexWrap: "wrap",
                   gap: "4px",
-                  overflowX: "auto",
-                  paddingBottom: "2px",
                 }}
               >
                 {PRESET_CONDITIONS.map((p) => {
