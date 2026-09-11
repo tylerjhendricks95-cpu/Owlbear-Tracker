@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import OBR, { Item } from "@owlbear-rodeo/sdk";
 
 export interface TrackerEntry {
@@ -47,6 +47,8 @@ export default function App() {
   const [activeIndex, setActiveIndex] = useState<number>(0);
   const [round, setRound] = useState<number>(1);
   const [inCombat, setInCombat] = useState<boolean>(false);
+
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     OBR.onReady(async () => {
@@ -117,24 +119,28 @@ export default function App() {
     });
   }, []);
 
-  // Dynamic Window Resizing
+  // Measure content size and set Owlbear window height dynamically
   useEffect(() => {
     const updateWindowHeight = async () => {
-      // Base header & controls ~140px, plus ~200px per entry card
-      const calculatedHeight = 140 + entries.length * 200;
-      
+      if (!containerRef.current) return;
+
+      // Get exact scroll height of the inner container
+      const contentHeight = containerRef.current.scrollHeight;
+
       // Clamp between minimum 300px and maximum 800px
-      const targetHeight = Math.min(Math.max(300, calculatedHeight), 800);
+      const targetHeight = Math.min(Math.max(300, contentHeight), 800);
 
       try {
         await OBR.action.setHeight(targetHeight);
       } catch (_) {
-        // Fallback for popovers or contexts without action panel controls
+        // Fallback for popovers or context without action support
       }
     };
 
     if (isReady) {
-      updateWindowHeight();
+      // Small timeout allows DOM rendering/wrapping to complete before measurement
+      const timer = setTimeout(updateWindowHeight, 50);
+      return () => clearTimeout(timer);
     }
   }, [entries, isReady]);
 
@@ -315,15 +321,14 @@ export default function App() {
 
   return (
     <div
+      ref={containerRef}
       style={{
         padding: "12px",
         color: "#fff",
         backgroundColor: "#1e1e24",
-        height: "100vh",
-        maxHeight: "100vh",
-        overflowY: "auto",
         boxSizing: "border-box",
         fontFamily: "sans-serif",
+        overflow: "hidden", // Prevents internal scrollbar completely
       }}
     >
       <h2 style={{ margin: "0 0 8px 0", textAlign: "center", fontSize: "18px" }}>
@@ -656,7 +661,7 @@ export default function App() {
                 })}
               </div>
 
-              {/* Condition Quick Selector (Wrapping Flexbox) */}
+              {/* Condition Quick Selector */}
               <div
                 style={{
                   marginTop: "6px",
