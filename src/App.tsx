@@ -89,9 +89,9 @@ export default function App() {
 
           if (data.inCombat && data.entries.length > 0) {
             const activeId = data.entries[data.activeIndex]?.id;
-            await highlightActiveTokenOnMap(activeId || null);
+            await focusAndHighlightActiveToken(activeId || null);
           } else {
-            await highlightActiveTokenOnMap(null);
+            await focusAndHighlightActiveToken(null);
           }
         }
       });
@@ -107,16 +107,16 @@ export default function App() {
 
         if (data.inCombat && data.entries.length > 0) {
           const activeId = data.entries[data.activeIndex]?.id;
-          await highlightActiveTokenOnMap(activeId || null);
+          await focusAndHighlightActiveToken(activeId || null);
         }
       }
     });
   }, []);
 
-  // Attaches a visual ring to the active token without moving/panning the camera
-  const highlightActiveTokenOnMap = async (activeTokenId: string | null) => {
+  // Selects the active token and attaches the visual ring
+  const focusAndHighlightActiveToken = async (activeTokenId: string | null) => {
     try {
-      // Always remove previous highlight ring first
+      // 1. Remove existing highlight ring
       const allItems = await OBR.scene.items.getItems();
       if (allItems.some((item) => item.id === HIGHLIGHT_ID)) {
         await OBR.scene.items.deleteItems([HIGHLIGHT_ID]);
@@ -124,10 +124,13 @@ export default function App() {
 
       if (!activeTokenId) return;
 
+      // 2. Select the active token on the board using OBR.player.select
+      await OBR.player.select([activeTokenId]);
+
       const targetToken = allItems.find((item) => item.id === activeTokenId);
       if (!targetToken) return;
 
-      // Calculate center position and sizing for the attachment ring
+      // 3. Calculate center position and sizing for the attachment ring
       const gridDpi = targetToken.grid?.dpi || 150;
       const width = gridDpi * (targetToken.scale?.x || 1);
       const height = gridDpi * (targetToken.scale?.y || 1);
@@ -152,11 +155,11 @@ export default function App() {
 
       await OBR.scene.items.addItems([ring]);
     } catch (err) {
-      console.error("Failed to update active token highlight:", err);
+      console.error("Failed to select or highlight active token:", err);
     }
   };
 
-  // Save state to metadata and update map highlight
+  // Save state to metadata and update map highlight/selection
   const saveRoomState = async (
     newEntries: TrackerEntry[],
     newActiveIdx: number,
@@ -178,9 +181,9 @@ export default function App() {
     });
 
     if (newInCombat && newEntries.length > 0) {
-      await highlightActiveTokenOnMap(newEntries[newActiveIdx]?.id || null);
+      await focusAndHighlightActiveToken(newEntries[newActiveIdx]?.id || null);
     } else {
-      await highlightActiveTokenOnMap(null);
+      await focusAndHighlightActiveToken(null);
     }
   };
 
