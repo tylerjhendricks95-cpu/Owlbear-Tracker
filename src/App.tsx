@@ -49,6 +49,8 @@ export default function App() {
   const [inCombat, setInCombat] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  // Ref array to store references to each entry DOM card
+  const entryRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   useEffect(() => {
     OBR.onReady(async () => {
@@ -124,25 +126,29 @@ export default function App() {
     const updateWindowHeight = async () => {
       if (!containerRef.current) return;
 
-      // Get exact scroll height of the inner container
       const contentHeight = containerRef.current.scrollHeight;
-
-      // Clamp between minimum 300px and maximum 800px
       const targetHeight = Math.min(Math.max(300, contentHeight), 800);
 
       try {
         await OBR.action.setHeight(targetHeight);
-      } catch (_) {
-        // Fallback for popovers or context without action support
-      }
+      } catch (_) {}
     };
 
     if (isReady) {
-      // Small timeout allows DOM rendering/wrapping to complete before measurement
       const timer = setTimeout(updateWindowHeight, 50);
       return () => clearTimeout(timer);
     }
   }, [entries, isReady]);
+
+  // Smooth scroll to the active player or monster when the turn changes
+  useEffect(() => {
+    if (inCombat && entryRefs.current[activeIndex]) {
+      entryRefs.current[activeIndex]?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [activeIndex, inCombat]);
 
   // Save state to room metadata and automatically select active token
   const saveRoomState = async (
@@ -182,8 +188,6 @@ export default function App() {
       if (newEntries.some((e) => e.id === item.id)) continue;
 
       const tokenName = item.name || "Token";
-      
-      // Tokens starting with "**" default to Manual (isAuto: false)
       const isManualToken = tokenName.startsWith("**");
 
       newEntries.push({
@@ -328,7 +332,6 @@ export default function App() {
         backgroundColor: "#1e1e24",
         boxSizing: "border-box",
         fontFamily: "sans-serif",
-        overflow: "hidden", // Prevents internal scrollbar completely
       }}
     >
       <h2 style={{ margin: "0 0 8px 0", textAlign: "center", fontSize: "18px" }}>
@@ -427,6 +430,7 @@ export default function App() {
           return (
             <div
               key={entry.id}
+              ref={(el) => (entryRefs.current[idx] = el)}
               style={{
                 padding: "10px",
                 backgroundColor: isActive ? "#3e3b25" : "#2a2d37",
@@ -671,7 +675,7 @@ export default function App() {
                 }}
               >
                 {PRESET_CONDITIONS.map((p) => {
-                  const isActive = (entry.conditions || []).includes(p.name);
+                  const isActiveCondition = (entry.conditions || []).includes(p.name);
                   return (
                     <button
                       key={p.name}
@@ -680,14 +684,14 @@ export default function App() {
                         padding: "2px 6px",
                         fontSize: "10px",
                         borderRadius: "4px",
-                        border: isActive ? `1px solid ${p.color}` : "1px solid #444",
-                        backgroundColor: isActive ? p.color : "#1e1e24",
-                        color: isActive ? "#fff" : "#888",
+                        border: isActiveCondition ? `1px solid ${p.color}` : "1px solid #444",
+                        backgroundColor: isActiveCondition ? p.color : "#1e1e24",
+                        color: isActiveCondition ? "#fff" : "#888",
                         cursor: "pointer",
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {isActive ? `✓ ${p.name}` : `+ ${p.name}`}
+                      {isActiveCondition ? `✓ ${p.name}` : `+ ${p.name}`}
                     </button>
                   );
                 })}
