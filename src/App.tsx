@@ -117,6 +117,27 @@ export default function App() {
     });
   }, []);
 
+  // Dynamic Window Resizing
+  useEffect(() => {
+    const updateWindowHeight = async () => {
+      // Base header & controls ~140px, plus ~200px per entry card
+      const calculatedHeight = 140 + entries.length * 200;
+      
+      // Clamp between minimum 300px and maximum 800px
+      const targetHeight = Math.min(Math.max(300, calculatedHeight), 800);
+
+      try {
+        await OBR.action.setHeight(targetHeight);
+      } catch (_) {
+        // Fallback for popovers or contexts without action panel controls
+      }
+    };
+
+    if (isReady) {
+      updateWindowHeight();
+    }
+  }, [entries, isReady]);
+
   // Save state to room metadata and automatically select active token
   const saveRoomState = async (
     newEntries: TrackerEntry[],
@@ -298,7 +319,9 @@ export default function App() {
         padding: "12px",
         color: "#fff",
         backgroundColor: "#1e1e24",
-        minHeight: "100vh",
+        height: "100vh",
+        maxHeight: "100vh",
+        overflowY: "auto",
         boxSizing: "border-box",
         fontFamily: "sans-serif",
       }}
